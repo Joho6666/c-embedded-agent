@@ -86,8 +86,8 @@
   --color-panel-2: var(--panel-2);
   --color-chrome: var(--chrome);
   --color-terminal: var(--terminal);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Consolas, monospace;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
@@ -105,7 +105,7 @@ body {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -121,7 +121,7 @@ select {
 code,
 pre,
 .terminal {
-  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 ::-webkit-scrollbar {
@@ -149,5 +149,45 @@ pre,
   }
   50% {
     opacity: 0.55;
+  }
+}
+
+@keyframes flow-dot {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+.flow-line {
+  position: relative;
+  overflow: hidden;
+}
+
+.flow-line::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 35%, transparent), transparent);
+  animation: flow-sweep 1.8s linear infinite;
+}
+
+@keyframes flow-sweep {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(420%);
   }
 }

@@ -14,10 +14,14 @@ import { Empty } from "@/components/common/Empty";
 
 export default function ProviderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const provider = useGateway((s) => s.providers.find((p) => p.id === id));
-  const creds = useGateway((s) => s.credentials.filter((c) => c.providerId === id));
-  const models = useGateway((s) => s.models.filter((m) => m.providerId === id));
-  const logs = useGateway((s) => s.logs.filter((l) => l.providerId === id).slice(0, 20));
+  const providers = useGateway((s) => s.providers);
+  const allCreds = useGateway((s) => s.credentials);
+  const allModels = useGateway((s) => s.models);
+  const allLogs = useGateway((s) => s.logs);
+  const provider = providers.find((p) => p.id === id);
+  const creds = allCreds.filter((c) => c.providerId === id);
+  const models = allModels.filter((m) => m.providerId === id);
+  const logs = allLogs.filter((l) => l.providerId === id).slice(0, 20);
   const openCred = useUi((s) => s.openAddCredential);
   const openC = useUi((s) => s.openCredential);
   const [tab, setTab] = useState("overview");

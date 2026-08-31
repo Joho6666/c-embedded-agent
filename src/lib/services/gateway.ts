@@ -31,6 +31,18 @@ export const gatewayApi = {
     adminFetch<{ ok: boolean; message: string }>(`/admin/credentials/${id}/test`, { method: "POST" }),
   recoverCredential: (id: string) =>
     adminFetch<Credential>(`/admin/credentials/${id}/recover`, { method: "POST" }),
+  startOAuth: (input: { family: string; baseUrl?: string; managementKey?: string; credentialId?: string }) =>
+    adminFetch<{
+      ok: boolean;
+      bridgeOnline?: boolean;
+      family?: string;
+      label?: string;
+      bridge?: string;
+      loginUrl?: string;
+      message?: string;
+      hint?: string;
+      command?: string;
+    }>("/admin/oauth/start", { method: "POST", body: JSON.stringify(input) }),
 
   listModels: () => adminFetch<RealModel[]>("/admin/models"),
   listVirtual: () => adminFetch<VirtualModel[]>("/admin/virtual-models"),

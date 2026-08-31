@@ -219,3 +219,16 @@ def test_streaming(client, admin):
         assert r.status_code == 200
         text = "".join(r.iter_text())
         assert "[DONE]" in text or "hi" in text
+
+
+def test_oauth_start_bridge_offline(client, admin):
+    r = client.post(
+        "/admin/oauth/start",
+        headers=admin,
+        json={"family": "gemini-cli", "baseUrl": "http://cliproxy-offline.test:8317"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "label" in body
+    assert body.get("family") == "gemini-cli"
+    assert body.get("ok") is False or body.get("bridgeOnline") is False or "EasyCLIProxy" in (body.get("message") or body.get("command") or "")

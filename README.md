@@ -34,6 +34,18 @@ npm run dev
 - Gateway：http://localhost:8000/v1
 - Admin 默认 Key：`gw-admin-dev-key`
 
+## 官方 OAuth 资源（EasyCLIProxy / CLIProxyAPI）
+
+Gateway **不自己抓网页 Cookie**。Gemini CLI / Claude Code / Codex / Antigravity 的官方 OAuth 由 EasyCLIProxyAPI（默认 `http://127.0.0.1:8317`）完成，再作为 OpenAI Compatible 上游接入本 Gateway。
+
+1. 安装并启动 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 或 EasyCLIProxyAPI。
+2. 在托盘 / CLI 里对 **Gemini CLI、Claude Code、Codex、Antigravity** 点官方 Login（浏览器 OAuth）。
+3. 本控制面 → 添加 Provider：`CLI OAuth Bridge` 或 `Gemini CLI OAuth` 等。
+4. Base URL 填 `http://127.0.0.1:8317`。
+5. 点 **开始官方 OAuth**（若 Management API 可用会打开官方授权页；否则按提示在 EasyCLIProxy 完成登录）。
+6. Test Connection → 同步模型。
+7. 客户端仍然只连 `http://localhost:8000/v1` + `sk-gw-xxxx`。
+
 ## Docker
 
 ```bash

@@ -38,6 +38,11 @@ DESCRIPTOR_DEFAULTS = {
     "custom-openai": ("openai_compatible", "Custom OpenAI Compatible", "Custom", "#94a3b8", "CU", ""),
     "gemini": ("gemini", "Google Gemini", "Google", "#4285f4", "G", "https://generativelanguage.googleapis.com/v1beta"),
     "ollama": ("ollama", "Ollama", "Local", "#c2c2c2", "OL", "http://localhost:11434"),
+    "cliproxy": ("external_bridge", "CLI OAuth Bridge", "CLIProxy", "#22d3ee", "CP", "http://127.0.0.1:8317"),
+    "gemini-cli": ("external_bridge", "Gemini CLI OAuth", "Google", "#4285f4", "GC", "http://127.0.0.1:8317"),
+    "claude-code": ("external_bridge", "Claude Code OAuth", "Anthropic", "#d97757", "CC", "http://127.0.0.1:8317"),
+    "openai-codex": ("external_bridge", "OpenAI Codex OAuth", "OpenAI", "#10a37f", "CX", "http://127.0.0.1:8317"),
+    "antigravity": ("external_bridge", "Antigravity OAuth", "Google", "#8ab4f8", "AG", "http://127.0.0.1:8317"),
 }
 
 
@@ -250,6 +255,31 @@ async def test_credential(cid: str, db: Session = Depends(get_db)):
             row.status = "error"
     db.flush()
     return {"ok": ok, "message": msg}
+
+
+class OAuthStartIn(BaseModel):
+    family: str = "gemini-cli"
+    baseUrl: str | None = None
+    managementKey: str | None = None
+    credentialId: str | None = None
+
+
+@router.post("/oauth/start")
+async def oauth_start(body: OAuthStartIn, db: Session = Depends(get_db)):
+    from app.providers.external_bridge import start_official_oauth
+
+    base = body.baseUrl or "http://127.0.0.1:8317"
+    mgmt = body.managementKey or ""
+    if body.credentialId:
+        row = db.get(CredentialRow, body.credentialId)
+        if not row:
+            raise HTTPException(404, "credential not found")
+        extra = json.loads(row.extra_json or "{}")
+        base = row.base_url or extra.get("baseUrl") or base
+        from app.core.security import decrypt_secret
+
+        mgmt = mgmt or decrypt_secret(row.encrypted_secret)
+    return await start_official_oauth(base, mgmt, body.family)
 
 
 @router.post("/credentials/{cid}/recover")

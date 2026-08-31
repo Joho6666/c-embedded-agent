@@ -172,8 +172,31 @@ function AddCredentialDialog() {
             onChange={(k, v) => setValues((s) => ({ ...s, [k]: v }))}
           />
           <p className="text-[11px] text-muted-foreground">
-            仅接入用户有权使用并由 Provider 官方支持的认证方式。
+            仅接入用户有权使用并由 Provider 官方支持的认证方式。OAuth 走 EasyCLIProxy / CLIProxy 官方浏览器授权，不抓取网页 Cookie。
           </p>
+          {authType === "oauth" && (
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const family = d?.id === "cliproxy" ? "gemini-cli" : (d?.id ?? "gemini-cli");
+                  const r = await gatewayApi.startOAuth({
+                    family,
+                    baseUrl: values.baseUrl || d?.defaultBaseUrl,
+                    managementKey: values.managementKey,
+                  });
+                  if (r.loginUrl) {
+                    window.open(r.loginUrl, "_blank", "noopener,noreferrer");
+                  }
+                  toast[r.ok ? "success" : "error"](r.message || r.hint || r.command || "请在 EasyCLIProxy 完成官方登录");
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "无法启动 OAuth");
+                }
+              }}
+            >
+              开始官方 OAuth
+            </Button>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={close}>
               取消
@@ -210,12 +233,16 @@ function AddCredentialDialog() {
 function CredentialDrawer() {
   const id = useUi((s) => s.credentialDrawerId);
   const close = useUi((s) => s.openCredential);
-  const cred = useGateway((s) => s.credentials.find((c) => c.id === id));
-  const provider = useGateway((s) => s.providers.find((p) => p.id === cred?.providerId));
-  const models = useGateway((s) => s.models.filter((m) => m.providerId === cred?.providerId));
-  const logs = useGateway((s) => s.logs.filter((l) => l.credentialId === id).slice(0, 8));
+  const credentials = useGateway((s) => s.credentials);
+  const providers = useGateway((s) => s.providers);
+  const allModels = useGateway((s) => s.models);
+  const allLogs = useGateway((s) => s.logs);
   const toggle = useGateway((s) => s.toggleCredential);
   const update = useGateway((s) => s.updateCredential);
+  const cred = credentials.find((c) => c.id === id);
+  const provider = providers.find((p) => p.id === cred?.providerId);
+  const models = cred ? allModels.filter((m) => m.providerId === cred.providerId) : allModels;
+  const logs = id ? allLogs.filter((l) => l.credentialId === id).slice(0, 8) : [];
 
   return (
     <Sheet open={Boolean(id)} onOpenChange={(v) => !v && close(undefined)}>
@@ -292,6 +319,19 @@ function CredentialDrawer() {
               >
                 Test Connection
               </Button>
+              {cred.authType === "oauth" && (
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    const family = provider?.descriptorId === "cliproxy" ? "gemini-cli" : (provider?.descriptorId ?? "gemini-cli");
+                    const r = await gatewayApi.startOAuth({ family, credentialId: cred.id });
+                    if (r.loginUrl) window.open(r.loginUrl, "_blank", "noopener,noreferrer");
+                    toast[r.ok ? "success" : "error"](r.message || r.hint || "请到 EasyCLIProxy 完成官方登录");
+                  }}
+                >
+                  重新官方 OAuth
+                </Button>
+              )}
               <Button variant="outline" onClick={() => update(cred.id, { weight: Math.min(100, cred.weight + 5) })}>
                 权重 +5
               </Button>
@@ -306,10 +346,14 @@ function CredentialDrawer() {
 function RequestDrawer() {
   const id = useUi((s) => s.requestDrawerId);
   const close = useUi((s) => s.openRequest);
-  const log = useGateway((s) => s.logs.find((l) => l.id === id));
-  const provider = useGateway((s) => s.providers.find((p) => p.id === log?.providerId));
-  const cred = useGateway((s) => s.credentials.find((c) => c.id === log?.credentialId));
-  const key = useGateway((s) => s.keys.find((k) => k.id === log?.clientKeyId));
+  const logs = useGateway((s) => s.logs);
+  const providers = useGateway((s) => s.providers);
+  const credentials = useGateway((s) => s.credentials);
+  const keys = useGateway((s) => s.keys);
+  const log = logs.find((l) => l.id === id);
+  const provider = providers.find((p) => p.id === log?.providerId);
+  const cred = credentials.find((c) => c.id === log?.credentialId);
+  const key = keys.find((k) => k.id === log?.clientKeyId);
 
   return (
     <Sheet open={Boolean(id)} onOpenChange={(v) => !v && close(undefined)}>

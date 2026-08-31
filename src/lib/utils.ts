@@ -9,6 +9,11 @@ export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function formatPercent(used: number, total: number) {
+  if (!total) return "0%";
+  return `${((used / total) * 100).toFixed(1)}%`;
+}
+
 export function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }

@@ -1,23 +1,54 @@
 "use client";
 
-import { Sidebar } from "./Sidebar";
+import type { ReactNode } from "react";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { TopBar } from "./TopBar";
+import { Sidebar } from "./Sidebar";
+import { BottomPanel } from "./BottomPanel";
 import { CommandPalette } from "./CommandPalette";
-import { GlobalDialogs } from "@/components/credentials/GlobalDialogs";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
+import { MobileNav } from "./MobileNav";
+import { useWorkspaceUI } from "@/lib/stores/workspace-store";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, context }: { children: ReactNode; context?: ReactNode }) {
+  const bottomOpen = useWorkspaceUI((s) => s.bottomOpen);
+
   return (
-    <TooltipProvider>
-      <div className="flex h-full min-h-0">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar />
-          <main className="min-h-0 flex-1 overflow-auto p-4 md:p-5">{children}</main>
-        </div>
-      </div>
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
+      <KeyboardShortcuts />
       <CommandPalette />
-      <GlobalDialogs />
-    </TooltipProvider>
+      <TopBar />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar />
+        <Group orientation="vertical" className="h-full min-w-0 flex-1">
+          <Panel defaultSize={bottomOpen ? "68" : "100"} minSize="30">
+            <Group orientation="horizontal" className="h-full">
+              <Panel defaultSize={context ? "74" : "100"} minSize="40">
+                <main className="h-full overflow-auto bg-background">{children}</main>
+              </Panel>
+              {context != null && (
+                <>
+                  <Separator className="w-px bg-border hover:bg-primary/50 data-[separator=active]:bg-primary" />
+                  <Panel defaultSize="26" minSize="16" maxSize="40" className="hidden lg:block">
+                    <aside className="hidden h-full overflow-hidden border-l border-border bg-panel lg:block">
+                      {context}
+                    </aside>
+                  </Panel>
+                </>
+              )}
+            </Group>
+          </Panel>
+          {bottomOpen && (
+            <>
+              <Separator className="h-px bg-border hover:bg-primary/50 data-[separator=active]:bg-primary" />
+              <Panel defaultSize="32" minSize="16" maxSize="55" className="hidden md:block">
+                <BottomPanel />
+              </Panel>
+            </>
+          )}
+        </Group>
+      </div>
+      <MobileNav />
+    </div>
   );
 }

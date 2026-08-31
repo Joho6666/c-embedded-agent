@@ -1,42 +1,60 @@
-# Universal AI Gateway
+# C-Embedded Agent
 
-One Gateway. Every Provider. Every Model. Every Credential. One API.
+专注 C 语言与嵌入式开发的 AI 工程师。当前仓库包含：
 
-把 OpenAI / Gemini / Claude / GLM / Kimi / DeepSeek / OpenRouter / 火山方舟 / 百炼 / 混元 / SiliconFlow / Ollama 以及自定义 OpenAI Compatible 上游，统一到：
+- **前端**：Next.js 15 工作台（Timeline / 代码 / 终端 / 问题）
+- **后端**：FastAPI Agent Runtime（真实文件系统 + make + OpenAI 兼容 LLM）
 
-```
-BASE_URL=http://localhost:8000/v1
-API_KEY=sk-gw-xxxx
-```
+## 模式
 
-当前仓库是可运行的 Control Plane 前端 Prototype。Mock 数据 + Zustand 可变状态 + `lib/services` 预留 REST 延迟，方便以后接真实 Gateway。
+- **DEMO**：后端未启动时，顶栏显示 DEMO，走前端 Mock 剧本（不会伪装成 LIVE 成功）
+- **LIVE**：启动 FastAPI 后顶栏显示 LIVE。Run Agent 会创建真实工程并请求 `/api/runs`
+- 本机没有 `arm-none-eabi-gcc` 时，LIVE 会明确报「未检测到编译器」，**不会伪装 Build Successful**
 
 ## 启动
+
+前端：
 
 ```bash
 npm install
 npm run dev
 ```
 
-打开 http://localhost:3000 。默认 Dark Mode。`Ctrl+K` 打开命令面板。
+后端：
 
-## 概念
+```bash
+pip install -r backend/requirements.txt
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+打开 http://localhost:3000
+
+## 环境变量
+
+见 `.env.example`：
 
 ```
-Client → Gateway API → Virtual Model → Router → Provider → Credential → Real Model
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+LLM_BASE_URL=
+LLM_API_KEY=
+LLM_MODEL=
 ```
 
-- **Provider**：服务商
-- **Credential**：官方支持的认证（API Key / OAuth / Project / Local）。不做 Cookie / Session 窃取
-- **Real Model**：上游模型
-- **Virtual Model**：客户端别名（`coding` / `fast` / `cheap`）
-- **Routing Policy**：权重、Failover、熔断规则
-- **API Key**：谁可以调用你的 Gateway
+LLM 使用本机已配置的 OpenAI 兼容接口。未配置时 Agent 会报 LLM 不可用，并尝试直接 `make`（仍受编译器检测约束）。
 
-## 页面
+## MVP
 
-概览 · Provider · 凭据池 · 模型中心 · 虚拟模型 · 路由策略 · API Keys · 请求日志 · 用量与成本 · 额度 · 健康状态 · 熔断中心 · API Playground · 开发者接入 · 系统设置
+- STM32F103C8T6 + HAL 风格模板（`templates/stm32f103_hal`，可被 ARM GCC 编译）
+- Agent 循环最多 8 轮：读文件 / 写文件 / make / 知识检索
+- SSE：`GET /api/runs/{id}/events`
+- GCC 错误解析 → Problems
+- 工具检测：`GET /api/tools/status`
 
-## 技术栈
+即将推出：ESP32、C51、Keil 真编译、OpenOCD 烧录。
 
-Next.js 15 · React 19 · TypeScript · Tailwind 4 · shadcn/ui · Zustand · Recharts · Lucide
+## 测试
+
+```bash
+cd backend && python -m pytest -q
+npm run build
+```

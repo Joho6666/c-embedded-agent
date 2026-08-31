@@ -1,0 +1,113 @@
+import type { HardwareContext, PinAssignment } from "@/types/hardware";
+import type { McuInfo, PinConfig } from "@/types/mcu";
+
+export const pinAssignments: PinAssignment[] = [
+  { pin: "PA0", function: "ADC / TIM2", peripheral: "ADC1", direction: "analog", source: "board" },
+  { pin: "PA5", function: "GPIO Output", peripheral: "GPIOA", direction: "out", mode: "PP", source: "user", note: "LED" },
+  { pin: "PA9", function: "USART1_TX", peripheral: "USART1", direction: "af", source: "board" },
+  { pin: "PA10", function: "USART1_RX", peripheral: "USART1", direction: "af", source: "board" },
+];
+
+export const defaultHardware: HardwareContext = {
+  vendor: "STMicroelectronics",
+  platform: "STM32",
+  mcu: "STM32F103C8T6",
+  board: "Blue Pill",
+  core: "ARM Cortex-M3",
+  package: "LQFP48",
+  flashKb: 64,
+  ramKb: 20,
+  clock: "72 MHz",
+  voltage: "2.0–3.6V",
+  framework: "HAL",
+  rtos: "None",
+  sdkVersion: "STM32CubeF1 1.8.6",
+  buildTool: "ARM GCC",
+  projectGenerator: "STM32CubeMX",
+  debugger: "ST-Link V2",
+  serialPort: "COM3",
+  serialBaud: 115200,
+  pins: pinAssignments,
+  peripherals: [
+    { name: "GPIO", count: 37 },
+    { name: "USART", count: 3 },
+    { name: "SPI", count: 2 },
+    { name: "I2C", count: 2 },
+    { name: "ADC", count: 2 },
+    { name: "TIM", count: 4 },
+    { name: "CAN", count: 1 },
+    { name: "USB", count: 1 },
+  ],
+};
+
+export const currentMcu: McuInfo = {
+  id: "stm32f103c8t6",
+  name: "STM32F103C8T6",
+  family: "STM32F1",
+  core: "ARM Cortex-M3",
+  frequency: "72 MHz",
+  flashKb: 64,
+  ramKb: 20,
+  voltage: "2.0–3.6V",
+  package: "LQFP48",
+  peripherals: defaultHardware.peripherals,
+};
+
+export const mcuCatalog: McuInfo[] = [
+  currentMcu,
+  {
+    id: "stm32f407vgt6",
+    name: "STM32F407VGT6",
+    family: "STM32F4",
+    core: "ARM Cortex-M4F",
+    frequency: "168 MHz",
+    flashKb: 1024,
+    ramKb: 192,
+    voltage: "1.8–3.6V",
+    package: "LQFP100",
+    peripherals: [],
+  },
+  {
+    id: "esp32s3",
+    name: "ESP32-S3",
+    family: "ESP32",
+    core: "Xtensa LX7 dual-core",
+    frequency: "240 MHz",
+    flashKb: 8192,
+    ramKb: 512,
+    voltage: "3.0–3.6V",
+    package: "QFN56",
+    peripherals: [],
+  },
+  {
+    id: "stc89c52",
+    name: "STC89C52RC",
+    family: "8051",
+    core: "8051",
+    frequency: "12 MHz",
+    flashKb: 8,
+    ramKb: 0.5,
+    voltage: "5V",
+    package: "DIP40",
+    peripherals: [],
+  },
+];
+
+export const pinMap: PinConfig[] = [
+  { name: "VBAT", side: "left", index: 1, functions: ["PWR"] },
+  { name: "PC13", side: "left", index: 2, functions: ["GPIO"] },
+  { name: "NRST", side: "left", index: 7, functions: ["RESET"] },
+  { name: "PA0", side: "left", index: 10, functions: ["ADC", "TIM2_CH1"], assigned: "ADC / TIM2" },
+  { name: "PA1", side: "left", index: 11, functions: ["ADC"] },
+  { name: "PA2", side: "left", index: 12, functions: ["USART2_TX"] },
+  { name: "PA5", side: "right", index: 15, functions: ["GPIO", "SPI1_SCK"], assigned: "GPIO Output", note: "LED", highlight: true },
+  { name: "PA6", side: "right", index: 16, functions: ["SPI1_MISO"] },
+  { name: "PA7", side: "right", index: 17, functions: ["SPI1_MOSI"] },
+  { name: "PB0", side: "right", index: 18, functions: ["ADC"] },
+  { name: "PA9", side: "top", index: 30, functions: ["USART1_TX"], assigned: "USART1_TX" },
+  { name: "PA10", side: "top", index: 31, functions: ["USART1_RX"], assigned: "USART1_RX" },
+  { name: "PA11", side: "top", index: 32, functions: ["USB_DM"] },
+  { name: "PA13", side: "bottom", index: 34, functions: ["SWDIO"] },
+  { name: "PA14", side: "bottom", index: 37, functions: ["SWCLK"] },
+  { name: "BOOT0", side: "bottom", index: 44, functions: ["BOOT"] },
+];

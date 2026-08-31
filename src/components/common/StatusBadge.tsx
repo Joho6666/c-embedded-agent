@@ -1,52 +1,55 @@
-import { Badge } from "@/components/ui/badge";
-import type { CredentialStatus, ProviderStatus, RequestStatusCode } from "@/types";
+import { cn } from "@/lib/utils";
 
-const credMap: Record<CredentialStatus, { label: string; tone: React.ComponentProps<typeof Badge>["tone"] }> = {
-  healthy: { label: "Healthy", tone: "success" },
-  rate_limited: { label: "Rate Limited", tone: "limit" },
-  cooling: { label: "Cooling", tone: "cool" },
-  circuit_open: { label: "Circuit Open", tone: "error" },
-  unauthorized: { label: "Unauthorized", tone: "error" },
-  quota_exhausted: { label: "Quota Exhausted", tone: "warning" },
-  disabled: { label: "Disabled", tone: "neutral" },
-  error: { label: "Error", tone: "error" },
-};
+const map = {
+  ready: { label: "就绪", cls: "text-muted-foreground bg-muted" },
+  working: { label: "工作中", cls: "text-info bg-info/10" },
+  success: { label: "成功", cls: "text-success bg-success/10" },
+  passed: { label: "通过", cls: "text-success bg-success/10" },
+  warning: { label: "警告", cls: "text-warning bg-warning/10" },
+  error: { label: "错误", cls: "text-error bg-error/10" },
+  failed: { label: "失败", cls: "text-error bg-error/10" },
+  pending: { label: "待处理", cls: "text-muted-foreground bg-muted" },
+  running: { label: "进行中", cls: "text-info bg-info/10" },
+  connected: { label: "已连接", cls: "text-success bg-success/10" },
+  disconnected: { label: "未连接", cls: "text-muted-foreground bg-muted" },
+  idle: { label: "空闲", cls: "text-muted-foreground bg-muted" },
+  complete: { label: "完成", cls: "text-success bg-success/10" },
+  stopped: { label: "已停止", cls: "text-warning bg-warning/10" },
+  pass: { label: "通过", cls: "text-success bg-success/10" },
+  fail: { label: "失败", cls: "text-error bg-error/10" },
+  skip: { label: "跳过", cls: "text-muted-foreground bg-muted" },
+} as const;
 
-const provMap: Record<ProviderStatus, { label: string; tone: React.ComponentProps<typeof Badge>["tone"] }> = {
-  operational: { label: "Operational", tone: "success" },
-  degraded: { label: "Degraded", tone: "warning" },
-  partial_outage: { label: "Partial Outage", tone: "error" },
-  down: { label: "Down", tone: "error" },
-  offline: { label: "Offline", tone: "neutral" },
-};
-
-export function CredStatus({ status }: { status: CredentialStatus }) {
-  const m = credMap[status];
-  return <Badge tone={m.tone}>{m.label}</Badge>;
-}
-
-export function ProvStatus({ status }: { status: ProviderStatus }) {
-  const m = provMap[status];
-  return <Badge tone={m.tone}>{m.label}</Badge>;
-}
-
-export function RequestStatus({ status }: { status: RequestStatusCode }) {
-  const ok = status === 200;
-  const warn = status === 429 || status === "quota_exhausted" || status === "timeout";
+export function StatusBadge({
+  status,
+  label,
+  className,
+}: {
+  status: string;
+  label?: string;
+  className?: string;
+}) {
+  const item = map[status as keyof typeof map];
   return (
-    <Badge tone={ok ? "success" : warn ? "warning" : "error"} className="font-mono">
-      {String(status).toUpperCase()}
-    </Badge>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium tracking-wide",
+        item?.cls ?? "bg-muted text-muted-foreground",
+        className,
+      )}
+    >
+      {label ?? item?.label ?? status}
+    </span>
   );
 }
 
 export function Dot({ tone = "success" }: { tone?: "success" | "warning" | "error" | "neutral" | "info" }) {
-  const map = {
+  const colors = {
     success: "bg-success",
     warning: "bg-warning",
     error: "bg-error",
     neutral: "bg-muted-foreground",
     info: "bg-info",
   };
-  return <span className={`inline-block size-1.5 rounded-full ${map[tone]}`} />;
+  return <span className={`inline-block size-1.5 rounded-full ${colors[tone]}`} />;
 }

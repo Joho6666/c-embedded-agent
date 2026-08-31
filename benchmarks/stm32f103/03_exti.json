@@ -1,0 +1,1 @@
+{"id":"03","prompt":"PA0 EXTI 下降沿中断，翻转 PC13。","expected_files":["Core/Src/gpio.c","Core/Src/stm32f1xx_it.c"],"must_compile":true}

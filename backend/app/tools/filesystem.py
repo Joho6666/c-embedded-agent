@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.workspace.paths import PathEscapeError, resolve_in_root
+from app.workspace.paths import assert_writable, resolve_in_root
 
 TEXT_MAX = 200_000
 
@@ -26,7 +26,8 @@ def read_file(root: Path, rel: str) -> str:
     return data.decode("utf-8", errors="replace")
 
 
-def write_file(root: Path, rel: str, content: str) -> None:
-    path = resolve_in_root(root, rel)
+def write_file(root: Path, rel: str, content: str, *, advanced: bool = False) -> None:
+    norm = assert_writable(rel, advanced=advanced)
+    path = resolve_in_root(root, norm)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")

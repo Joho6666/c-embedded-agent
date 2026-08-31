@@ -38,15 +38,18 @@ export function createRemoteAgentBackend(): AgentBackend {
     getRun: (id) => apiFetch<AgentRun>(API_ROUTES.run(id)),
     subscribeEvents(runId: string, onEvent: EventListener) {
       const es = new EventSource(`${API_BASE}${API_ROUTES.events(runId)}`);
+      const seen = new Set<string>();
       const handler = (msg: MessageEvent<string>) => {
         try {
-          onEvent(JSON.parse(msg.data) as AgentEvent);
+          const event = JSON.parse(msg.data) as AgentEvent;
+          if (event.id && seen.has(event.id)) return;
+          if (event.id) seen.add(event.id);
+          onEvent(event);
         } catch {
           /* ignore */
         }
       };
       es.addEventListener("agent_event", handler);
-      es.onmessage = handler;
       return () => es.close();
     },
   };

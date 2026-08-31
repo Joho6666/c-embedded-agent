@@ -19,6 +19,13 @@
 /workspaces/
 /backend/**/__pycache__/
 *.pyc
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+!templates/**/startup_*.s
+benchmarks/**/results.json
 
 # production
 /build

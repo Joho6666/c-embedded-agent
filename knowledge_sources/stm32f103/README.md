@@ -1,3 +1,9 @@
-# STM32F103 知识库（MVP）
+# STM32F103 knowledge
 
-Markdown 笔记，供 Agent `retrieve_knowledge` 检索。不要把 RAG 藏起来：前端应显示查询与来源。
+Structured notes for FTS5 retrieval. Metadata: source / page / section / mcu.
+
+Do not vendor full ST PDFs in git. Ingest locally:
+
+```
+POST /api/knowledge/ingest  { "path": "C:/docs/RM0008.pdf", "source": "RM0008" }
+```

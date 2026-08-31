@@ -48,7 +48,12 @@ function applyEvent(event: AgentEvent) {
         : event.tool.command;
     terminal.appendTerminal([`$ ${cmd}`]);
   }
-  if (event.output) {
+  if (event.type === "terminal" && (event.content || event.output)) {
+    const line = event.content || event.output || "";
+    terminal.appendTerminal([line]);
+    terminal.appendBuild([line]);
+  }
+  if (event.output && event.type !== "terminal") {
     terminal.appendTerminal([event.output]);
     if (event.type === "compile") terminal.appendBuild([event.output]);
   }
@@ -58,10 +63,27 @@ function applyEvent(event: AgentEvent) {
     ui.setBottomTab("serial");
   }
   if (event.type === "compile" && event.status === "failed") ui.setBottomTab("problems");
-  if (event.type === "file_diff" && event.status === "success" && event.files?.[0] && event.proposed) {
+  if (event.type === "file_diff" && event.files?.[0] && (event.proposed || event.after)) {
     const p = event.files[0].startsWith("/") ? event.files[0] : `/${event.files[0]}`;
-    editor.setContent(p, event.proposed);
-    editor.saveFile(p);
+    const proposed = event.proposed ?? event.after ?? "";
+    const original = event.original ?? event.before ?? "";
+    if (event.status === "waiting_approval") {
+      editor.addPatch({
+        id: event.id,
+        runId: event.runId,
+        path: p,
+        original,
+        proposed,
+        status: "pending",
+        reason: event.description ?? event.title,
+        createdAt: event.timestamp,
+        approvalId: event.approvalId,
+      });
+      ui.setAgentView("code");
+    } else if (event.status === "success") {
+      editor.setContent(p, proposed);
+      editor.saveFile(p);
+    }
   }
   if (event.type === "file_write" && event.files?.length) {
     const first = event.files.find((f) => f.endsWith(".c") || f.endsWith(".h"));
@@ -75,26 +97,6 @@ function applyEvent(event: AgentEvent) {
             : "/Core/Src/main.c";
       editor.openFile(path);
     }
-  }
-  if (
-    event.type === "file_diff" &&
-    event.status === "waiting_approval" &&
-    event.files?.[0] &&
-    event.original != null &&
-    event.proposed != null
-  ) {
-    editor.addPatch({
-      id: event.id,
-      runId: event.runId,
-      path: event.files[0],
-      original: event.original,
-      proposed: event.proposed,
-      status: "pending",
-      reason: event.description ?? event.title,
-      createdAt: event.timestamp,
-      approvalId: event.approvalId,
-    });
-    ui.setAgentView("code");
   }
   if (event.type === "pin_conflict" && event.status === "waiting_approval") {
     useHardware.getState().setConflict({
@@ -177,8 +179,17 @@ export const useAgent = create<AgentState>()(
           goldenPath: !live,
         });
         const unsub = backend.subscribeEvents(run.id, (event) => {
-          if (event.description !== "__run_end__") applyEvent(event);
+          if (event.description !== "__run_end__" && event.type !== "run_stopped") applyEvent(event);
           set((s) => {
+            if (event.type === "run_stopped") {
+              return {
+                status: "stopped" as const,
+                statusText: "已停止",
+                approval: undefined,
+                liveRun: false,
+                activeRun: s.activeRun ? { ...s.activeRun, status: "cancelled" } : s.activeRun,
+              };
+            }
             if (event.description === "__run_end__") {
               return {
                 status: event.status === "success" ? "ready" : "stopped",
@@ -189,6 +200,8 @@ export const useAgent = create<AgentState>()(
               };
             }
             const events = [...s.events.filter((e) => e.id !== event.id), event];
+            const rawPlan = (event as unknown as { plan?: AgentRun["plan"] }).plan;
+            const planFromEvent = Array.isArray(rawPlan) ? rawPlan : undefined;
             const diagnostics = event.diagnostics?.length
               ? [...s.diagnostics.filter((d) => !event.diagnostics!.some((x) => x.id === d.id)), ...event.diagnostics]
               : s.diagnostics;
@@ -242,7 +255,13 @@ export const useAgent = create<AgentState>()(
               liveRun: true,
               status: waiting ? "waiting_approval" : "working",
               statusText: waiting ? "等待确认" : event.title,
-              activeRun: { ...(s.activeRun ?? run), events, currentStep: event.title, status: waiting ? "waiting_approval" : "running" },
+              activeRun: {
+                ...(s.activeRun ?? run),
+                events,
+                currentStep: event.title,
+                status: waiting ? "waiting_approval" : "running",
+                plan: planFromEvent ?? s.activeRun?.plan ?? run.plan,
+              },
             };
           });
         });

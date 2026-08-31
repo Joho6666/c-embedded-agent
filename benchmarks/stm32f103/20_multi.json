@@ -1,0 +1,1 @@
+{"id":"20","prompt":"同时配置 PC13 LED、USART1 115200 和 TIM2 PWM。","expected_files":["Core/Src/main.c"],"must_compile":true}

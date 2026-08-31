@@ -1,26 +1,19 @@
 # C-Embedded Agent
 
-专注 C 语言与嵌入式开发的 AI 工程师。当前仓库包含：
-
-- **前端**：Next.js 15 工作台（Timeline / 代码 / 终端 / 问题）
-- **后端**：FastAPI Agent Runtime（真实文件系统 + make + OpenAI 兼容 LLM）
+专注 STM32F103C8T6 的嵌入式 C Agent。判断标准不是功能数量，而是：同一真实任务上，编译成功率、一次成功率、自动修复率是否高于直接问模型。
 
 ## 模式
 
-- **DEMO**：后端未启动时，顶栏显示 DEMO，走前端 Mock 剧本（不会伪装成 LIVE 成功）
-- **LIVE**：启动 FastAPI 后顶栏显示 LIVE。Run Agent 会创建真实工程并请求 `/api/runs`
-- 本机没有 `arm-none-eabi-gcc` 时，LIVE 会明确报「未检测到编译器」，**不会伪装 Build Successful**
+- **DEMO**：后端未启动，顶栏 DEMO，走前端 Mock（不会伪装 LIVE 成功）
+- **LIVE**：FastAPI 已启动。没有 `arm-none-eabi-gcc` 时明确报缺失，**不会伪装 Build Successful**
+- **OFFLINE**：配置了 API URL 但后端不可达
 
 ## 启动
-
-前端：
 
 ```bash
 npm install
 npm run dev
 ```
-
-后端：
 
 ```bash
 pip install -r backend/requirements.txt
@@ -29,32 +22,45 @@ python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 
 打开 http://localhost:3000
 
-## 环境变量
+环境变量见 `.env.example`。LLM 必须是公网 http/https（拒绝 localhost / 私网）。未配置 LLM 时 Agent 会报不可用，并尝试直接 `make`。
 
-见 `.env.example`：
+## STM32F103 官方模板
 
+默认工程：`templates/stm32f103_hal_official`（STM32CubeF1 CMSIS + HAL，不是自制 stub）。
+
+- MCU：STM32F103C8T6
+- 板：Blue Pill
+- LED：**PC13**，500ms toggle
+- 同步官方驱动：`python scripts/sync_cubef1.py`
+
+```bash
+cd templates/stm32f103_hal_official
+make clean && make -j4
 ```
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
-LLM_BASE_URL=
-LLM_API_KEY=
-LLM_MODEL=
+
+需要 `arm-none-eabi-gcc` / `objcopy` / `size` / `make`。本机没有工具链时测试会 skip，不编造成绩。
+
+Golden 回归夹具：`examples/golden/stm32f103_led/`（`python examples/golden/sync_led.py`）。
+
+## Agent 规则
+
+先读工程 → 查 Knowledge / MCU pin → 最小修改 Core → `make` → 按真实 GCC/LD 错误修复。默认禁止改 `Drivers/`、`startup*.s`、`*.ld`、`Makefile`。
+
+## Benchmark
+
+```bash
+python benchmarks/benchmark.py
 ```
 
-LLM 使用本机已配置的 OpenAI 兼容接口。未配置时 Agent 会报 LLM 不可用，并尝试直接 `make`（仍受编译器检测约束）。
+输出 `benchmarks/stm32f103/results.json`。无 LLM 或无 ARM GCC 时 skip 并写明原因。
 
-## MVP
-
-- STM32F103C8T6 + HAL 风格模板（`templates/stm32f103_hal`，可被 ARM GCC 编译）
-- Agent 循环最多 8 轮：读文件 / 写文件 / make / 知识检索
-- SSE：`GET /api/runs/{id}/events`
-- GCC 错误解析 → Problems
-- 工具检测：`GET /api/tools/status`
-
-即将推出：ESP32、C51、Keil 真编译、OpenOCD 烧录。
-
-## 测试
+## 测试 / CI
 
 ```bash
 cd backend && python -m pytest -q
 npm run build
 ```
+
+GitHub Actions：前端 `npm ci && npm run build`，后端 `pytest`。ARM GCC 为 optional。
+
+本轮范围仅 STM32F103。不做 ESP32 / C51 / F407。

@@ -20,6 +20,9 @@ export const eventTypeLabel: Record<AgentEventType, string> = {
   approval: "待确认",
   error: "错误",
   pin_conflict: "引脚冲突",
+  terminal: "终端",
+  run_stopped: "已停止",
+  build_result: "构建结果",
 };
 
 export const eventStatusLabel: Record<AgentEventStatus, string> = {

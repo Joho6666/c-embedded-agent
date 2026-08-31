@@ -1,0 +1,1 @@
+{"id":"05","prompt":"USART1 中断接收一个字节并回显。","expected_files":["Core/Src/main.c"],"must_compile":true}

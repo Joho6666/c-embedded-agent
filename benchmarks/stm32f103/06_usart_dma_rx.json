@@ -1,0 +1,1 @@
+{"id":"06","prompt":"USART1 DMA 接收 16 字节环形缓冲。","expected_files":["Core/Src/main.c"],"must_compile":true}

@@ -16,7 +16,10 @@ export type AgentEventType =
   | "validation"
   | "approval"
   | "error"
-  | "pin_conflict";
+  | "pin_conflict"
+  | "terminal"
+  | "run_stopped"
+  | "build_result";
 
 export type AgentEventStatus =
   | "pending"
@@ -82,7 +85,7 @@ export interface AgentToolCall {
 
 export interface AgentDiagnostic {
   id: string;
-  source: "gcc" | "clangd" | "cppcheck" | "ceedling" | "agent";
+    source: "gcc" | "ld" | "clangd" | "cppcheck" | "ceedling" | "agent";
   severity: "error" | "warning" | "info";
   path: string;
   line: number;
@@ -119,10 +122,16 @@ export interface AgentEvent {
   output?: string;
   original?: string;
   proposed?: string;
+  before?: string;
+  after?: string;
+  stream?: "stdout" | "stderr";
+  content?: string;
+  path?: string;
   source?: KnowledgeSourceRef;
   artifacts?: AgentArtifact[];
   diagnostics?: AgentDiagnostic[];
   risk?: RiskLevel;
   requiresApproval?: boolean;
   approvalId?: string;
+  plan?: import("@/types/agent").PlanStep[];
 }

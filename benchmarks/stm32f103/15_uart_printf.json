@@ -1,0 +1,1 @@
+{"id":"15","prompt":"把 printf 重定向到 USART1 115200。","expected_files":["Core/Src/main.c","Core/Src/syscalls.c"],"must_compile":true}

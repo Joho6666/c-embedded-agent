@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config.settings import settings
+from app.tools.gitutil import init_repo
 
 
 def _ws_root() -> Path:
@@ -25,7 +26,7 @@ def create_project(name: str, mcu: str = "STM32F103C8T6", framework: str = "HAL"
         src = Path.cwd() / src
     if not src.is_dir():
         raise FileNotFoundError(f"template missing: {src}")
-    shutil.copytree(src, dest)
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("*.elf", "*.hex", "*.bin", "*.o", "*.map", ".git"))
     meta = {
         "id": pid,
         "name": name,
@@ -33,8 +34,14 @@ def create_project(name: str, mcu: str = "STM32F103C8T6", framework: str = "HAL"
         "mcu": mcu,
         "framework": framework,
         "toolchain": "ARM_GCC",
+        "board": "Blue Pill",
+        "led": "PC13",
     }
     (dest / "project.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    try:
+        init_repo(dest)
+    except Exception:
+        pass
     return meta
 
 
@@ -48,6 +55,8 @@ def project_root(project_id: str) -> Path:
 def list_projects() -> list[dict[str, Any]]:
     items = []
     for d in _ws_root().iterdir():
+        if not d.is_dir():
+            continue
         meta = d / "project.json"
         if meta.is_file():
             items.append(json.loads(meta.read_text(encoding="utf-8")))

@@ -1,0 +1,1 @@
+{"id":"19","prompt":"I2C EEPROM 24C02 写一字节再读回（地址 0x50）。","expected_files":["Core/Src/main.c"],"must_compile":true}

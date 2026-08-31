@@ -1,0 +1,1 @@
+{"id":"17","prompt":"ADC 读 PA0 并通过 USART1 打印数值。","expected_files":["Core/Src/main.c"],"must_compile":true}

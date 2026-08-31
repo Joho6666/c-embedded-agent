@@ -26,7 +26,7 @@ export default function ApiKeysPage() {
         actions={<Button onClick={() => open(true)}>Create</Button>}
       />
       <div className="overflow-auto rounded-md border border-border">
-        <table className="w-full min-w-[1080px] text-left text-[12px]">
+        <table className="gw-table w-full min-w-[1080px] text-left text-[12px]">
           <thead className="bg-muted/40 text-[11px] text-muted-foreground">
             <tr>
               {["Name", "Key", "Status", "Models", "RPM", "TPM", "Daily", "Budget", "Last Used", "Usage", ""].map((h) => (

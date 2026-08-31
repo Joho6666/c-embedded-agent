@@ -63,7 +63,7 @@ export default function RequestsPage() {
         </select>
       </div>
       <div className="overflow-auto rounded-md border border-border">
-        <table className="w-full min-w-[1200px] text-left text-[12px]">
+        <table className="gw-table w-full min-w-[1200px] text-left text-[12px]">
           <thead className="bg-muted/40 text-[11px] text-muted-foreground">
             <tr>
               {["Time", "ID", "Client", "Virtual", "Real", "Provider", "Credential", "Status", "In", "Out", "TTFT", "Latency", "Retry", "FB", "Cost"].map(

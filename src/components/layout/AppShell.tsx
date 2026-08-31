@@ -32,7 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               后端未连接：{error} · 请先启动 FastAPI :8000
             </div>
           )}
-          <main className="min-h-0 flex-1 overflow-auto p-4 md:p-5">{children}</main>
+          <main className="min-h-0 flex-1 overflow-auto p-5 md:p-6">{children}</main>
         </div>
       </div>
       <CommandPalette />

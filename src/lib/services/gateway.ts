@@ -62,6 +62,8 @@ export const gatewayApi = {
   usage: () => adminFetch<OverviewMetrics>("/admin/usage"),
   health: () => adminFetch<HealthSnapshot>("/admin/health"),
   circuits: () => adminFetch<CircuitBreaker[]>("/admin/circuit-breakers"),
+  capabilities: () => adminFetch<{ strategies: string[]; adapters: Record<string, Record<string, boolean>> }>("/admin/capabilities"),
+  usageTrend: (range = "today") => adminFetch<{ range: string; trend: { t: string; requests: number; tokens: number; cost: number }[] }>(`/admin/usage/trend?range=${range}`),
 
   async chatCompletions(body: Record<string, unknown>, key?: string) {
     const token = key || playgroundKey();

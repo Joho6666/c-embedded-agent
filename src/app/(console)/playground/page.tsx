@@ -77,7 +77,8 @@ export default function PlaygroundPage() {
     const started = performance.now();
     try {
       const res = await gatewayApi.chatCompletions(body, key);
-      if (stream && res.body) {
+      const ctype = res.headers.get("content-type") || "";
+      if (stream && res.ok && res.body && ctype.includes("text/event-stream")) {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
@@ -148,8 +149,8 @@ export default function PlaygroundPage() {
   return (
     <div>
       <PageHeader title="API Playground" description="真实调用 POST /v1/chat/completions，支持 SSE。" />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="space-y-3 rounded-md border border-border bg-card p-3">
+      <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="space-y-3 rounded-lg border border-border bg-card p-4">
           <div className="grid gap-1">
             <Label>Gateway API Key</Label>
             <Input
@@ -216,13 +217,13 @@ export default function PlaygroundPage() {
           <label className="flex items-center gap-2 text-[12px]">
             <Switch checked={stream} onCheckedChange={setStream} /> Streaming
           </label>
-          <Button disabled={running} onClick={() => void send()}>
+          <Button className="w-full" size="lg" disabled={running} onClick={() => void send()}>
             {running ? "Running…" : "Send"}
           </Button>
         </div>
-        <div className="rounded-md border border-border bg-card p-3">
+        <div className="flex flex-col rounded-lg border border-border bg-card p-4">
           <div className="mb-2 text-[12px] font-medium">Response</div>
-          <pre className="min-h-40 whitespace-pre-wrap rounded-sm border border-border bg-panel-2 p-2 font-mono text-[12px]">
+          <pre className="min-h-48 flex-1 whitespace-pre-wrap rounded-md border border-border bg-terminal p-3 font-mono text-[12px] text-zinc-200">
             {output || "等待发送…"}
           </pre>
           {meta && (

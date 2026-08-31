@@ -21,76 +21,67 @@ export function TopBar() {
 
   return (
     <>
-    <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-chrome px-4">
-      <div className="flex min-w-0 items-center gap-3">
-        <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileNav((v) => !v)}>
-          <Menu className="size-3.5" />
-        </Button>
-        <div className="hidden leading-tight sm:block">
-          <div className="text-[13px] font-medium">Universal AI Gateway</div>
-          <div className="text-[11px] text-muted-foreground">One API. Every Model.</div>
+      <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-chrome/90 px-4 backdrop-blur">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileNav((v) => !v)}>
+            <Menu className="size-3.5" />
+          </Button>
+          <div className="hidden leading-tight lg:block">
+            <div className="text-[13px] font-medium tracking-tight">Universal AI Gateway</div>
+            <div className="text-[11px] text-muted-foreground">One API. Every Model.</div>
+          </div>
+          <span className="hidden items-center gap-1.5 rounded-full border border-border bg-panel-2 px-2 py-0.5 text-[11px] md:inline-flex">
+            <Dot tone={health === "operational" ? "success" : "warning"} />
+            <span className="capitalize">{health}</span>
+          </span>
+          <button
+            className="hidden max-w-[320px] items-center gap-2 truncate rounded-full border border-border bg-panel-2 px-2.5 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground lg:inline-flex"
+            onClick={async () => {
+              await copyText(url);
+              toast.success("已复制 Gateway URL");
+            }}
+            title={url}
+          >
+            <span className="truncate">{url}</span>
+            <Copy className="size-3 shrink-0 opacity-60" />
+          </button>
         </div>
-        <span className="hidden items-center gap-1.5 rounded-sm border border-border px-1.5 py-0.5 text-[11px] md:inline-flex">
-          <Dot tone={health === "operational" ? "success" : "warning"} />
-          <span className="capitalize">{health}</span>
-        </span>
-        <button
-          className="hidden max-w-[280px] truncate rounded-sm border border-border bg-panel-2 px-2 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground lg:block"
-          onClick={async () => {
-            await copyText(url);
-            toast.success("已复制");
-          }}
-          title={url}
-        >
-          {url}
-        </button>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <Button variant="ghost" size="icon" onClick={() => openCmd(true)} title="Command">
-          <Search className="size-3.5" />
-        </Button>
-        <Button variant="outline" onClick={() => openProv()}>
-          <Plus className="size-3.5" />
-          Provider
-        </Button>
-        <Button variant="outline" onClick={() => openCred()}>
-          <Plus className="size-3.5" />
-          凭据
-        </Button>
-        <Button asChild>
-          <Link href="/playground">
-            <TerminalSquare className="size-3.5" />
-            Playground
-          </Link>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={async () => {
-            await copyText(url);
-            toast.success("已复制 Gateway URL");
-          }}
-        >
-          <Copy className="size-3.5" />
-        </Button>
-      </div>
-    </header>
-    {mobileNav && (
-      <div className="border-b border-border bg-chrome p-2 md:hidden">
-        <div className="grid grid-cols-2 gap-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-sm px-2 py-1.5 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground"
-              onClick={() => setMobileNav(false)}
-            >
-              {item.label}
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" size="icon" onClick={() => openCmd(true)} title="Command">
+            <Search className="size-3.5" />
+          </Button>
+          <Button variant="ghost" onClick={() => openProv()}>
+            <Plus className="size-3.5" />
+            Provider
+          </Button>
+          <Button variant="outline" onClick={() => openCred()}>
+            <Plus className="size-3.5" />
+            凭据
+          </Button>
+          <Button asChild>
+            <Link href="/playground">
+              <TerminalSquare className="size-3.5" />
+              Playground
             </Link>
-          ))}
+          </Button>
         </div>
-      </div>
-    )}
+      </header>
+      {mobileNav && (
+        <div className="border-b border-border bg-chrome p-2 md:hidden">
+          <div className="grid grid-cols-2 gap-1">
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="rounded-md px-2 py-1.5 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => setMobileNav(false)}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }

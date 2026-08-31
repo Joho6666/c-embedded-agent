@@ -82,7 +82,7 @@ llm = ChatOpenAI(base_url="${url}", api_key="sk-gw-xxxx", model="coding")`,
       </Button>
       <div className="mt-6 text-[12px] font-medium">兼容性矩阵</div>
       <div className="mt-2 overflow-auto rounded-md border border-border">
-        <table className="w-full min-w-[720px] text-left text-[11px]">
+        <table className="gw-table w-full min-w-[720px] text-left text-[11px]">
           <thead className="bg-muted/40 text-muted-foreground">
             <tr>
               <th className="px-2 py-2">Provider</th>

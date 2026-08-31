@@ -19,10 +19,11 @@ export default function OverviewPage() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[18px] font-medium tracking-tight">Universal AI Gateway</h1>
-          <p className="text-[12px] text-muted-foreground">One API. Every Model.</p>
+          <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Overview</p>
+          <h1 className="mt-1 text-[22px] font-medium tracking-tight">Universal AI Gateway</h1>
+          <p className="mt-1 text-[13px] text-muted-foreground">One API. Every Model.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => openProv()}>
@@ -39,7 +40,7 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-5">
+      <div className="mb-4 grid grid-cols-2 gap-2.5 md:grid-cols-5">
         <Metric label="今日请求" value={formatNumber(m.requestsToday)} />
         <Metric label="Token" value={formatCompact(m.tokensToday)} />
         <Metric label="成功率" value={formatPercent(m.successRate)} />
@@ -54,28 +55,34 @@ export default function OverviewPage() {
 
       <GatewayFlow />
 
-      <div className="mt-4">
-        <div className="mb-2 text-[12px] font-medium">Providers</div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {providers.slice(0, 6).map((p) => (
-            <Link
-              key={p.id}
-              href={`/providers/${p.id}`}
-              className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2 hover:bg-accent/40"
-            >
-              <div className="flex items-center gap-2">
-                <ProviderMark mark={p.mark} color={p.color} />
-                <div>
-                  <div className="text-[12px]">{p.name}</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {formatCompact(p.requestsToday)} req · {formatMs(p.latencyMs)}
+      <div className="mt-5">
+        <div className="mb-2 text-[13px] font-medium">Providers</div>
+        {providers.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center text-[12px] text-muted-foreground">
+            还没有 Provider。先添加一个 OpenAI Compatible 或 CLI OAuth Bridge。
+          </div>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {providers.slice(0, 6).map((p) => (
+              <Link
+                key={p.id}
+                href={`/providers/${p.id}`}
+                className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2.5 transition-colors hover:bg-accent/40"
+              >
+                <div className="flex items-center gap-2.5">
+                  <ProviderMark mark={p.mark} color={p.color} />
+                  <div>
+                    <div className="text-[13px]">{p.name}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {formatCompact(p.requestsToday)} req · {formatMs(p.latencyMs)}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <ProvStatus status={p.status} />
-            </Link>
-          ))}
-        </div>
+                <ProvStatus status={p.status} />
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

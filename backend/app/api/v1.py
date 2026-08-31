@@ -8,11 +8,18 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_gateway_key
-from app.gateway.engine import execute_chat, persist_log
+from app.core.database import SessionLocal
+from app.core.limiter import allow as rpm_allow
+from app.gateway.engine import execute_chat, persist_log, reset_daily_key
 from app.models.database import ApiKeyRow, ModelRow, VirtualModelRow
-from app.providers.base import UpstreamError
+from app.providers.base import ChatResult, UpstreamError
+from app.providers.transform import chat_body_from_responses, responses_from_chat
 
 router = APIRouter(prefix="/v1")
+
+
+def rate_limit_response(code: str) -> JSONResponse:
+    return JSONResponse({"error": {"type": "rate_limit_error", "code": code}}, status_code=429)
 
 
 @router.get("/models")
@@ -25,80 +32,97 @@ def list_models(db: Session = Depends(get_db), key: ApiKeyRow = Depends(require_
     return {"object": "list", "data": data}
 
 
-async def _run(db: Session, body: dict[str, Any], key: ApiKeyRow, stream: bool):
-    requested = str(body.get("model") or "")
+def _check_model(key: ApiKeyRow, requested: str) -> None:
     allowed = json.loads(key.allowed_models or "[]")
     if allowed and requested not in allowed and "*" not in allowed:
         raise HTTPException(status_code=403, detail=f"model '{requested}' not allowed for this key")
-    result = await execute_chat(db, body, stream=stream)
-    persist_log(db, result, key.id, requested, stream)
+
+
+def _check_key_quota(key: ApiKeyRow) -> JSONResponse | None:
+    reset_daily_key(key)
+    if key.daily_token_limit and key.tokens_today >= key.daily_token_limit:
+        return rate_limit_response("daily_token_exceeded")
+    if not rpm_allow(f"key-rpm:{key.id}", key.rpm_limit):
+        return rate_limit_response("rpm_exceeded")
+    return None
+
+
+def _bump_key(db: Session, key: ApiKeyRow, tokens: int) -> None:
+    reset_daily_key(key)
     key.requests_today += 1
-    key.tokens_today += result.input_tokens + result.output_tokens
+    key.tokens_today += tokens
     db.flush()
-    return result
+
+
+async def _execute(db: Session, body: dict[str, Any], key: ApiKeyRow, stream: bool):
+    requested = str(body.get("model") or "")
+    _check_model(key, requested)
+    limited = _check_key_quota(key)
+    if limited is not None:
+        return limited
+    return await execute_chat(db, body, stream=stream)
 
 
 @router.post("/chat/completions")
 async def chat_completions(request: Request, db: Session = Depends(get_db), key: ApiKeyRow = Depends(require_gateway_key)):
     body = await request.json()
     stream = bool(body.get("stream"))
-    result = await _run(db, body, key, stream)
+    requested = str(body.get("model") or "")
+    result = await _execute(db, body, key, stream)
+    if isinstance(result, JSONResponse):
+        return result
+
     if stream and result.stream_iter is not None:
+        key_id = key.id
 
         async def gen():
             try:
                 async for chunk in result.stream_iter:
                     yield chunk
             except UpstreamError as exc:
+                result.status_code = exc.status_code or 502
+                result.error = exc.message
+                result.request_status = "error"
                 err = json.dumps({"error": {"message": exc.message, "type": "upstream_error", "code": exc.status_code}})
                 yield f"data: {err}\n\n".encode()
                 yield b"data: [DONE]\n\n"
+            finally:
+                s = SessionLocal()
+                try:
+                    persist_log(s, result, key_id, requested, True)
+                    krow = s.get(ApiKeyRow, key_id)
+                    if krow:
+                        _bump_key(s, krow, result.input_tokens + result.output_tokens)
+                    s.commit()
+                except Exception:
+                    s.rollback()
+                finally:
+                    s.close()
 
         return StreamingResponse(gen(), media_type="text/event-stream")
+
+    persist_log(db, result, key.id, requested, False)
+    _bump_key(db, key, result.input_tokens + result.output_tokens)
     if result.payload is None:
-        return JSONResponse({"error": {"message": result.error or "upstream failed", "type": "gateway_error"}}, status_code=result.status_code or 502)
+        return JSONResponse(
+            {"error": {"message": result.error or "upstream failed", "type": "gateway_error"}},
+            status_code=result.status_code or 502,
+        )
     return JSONResponse(result.payload)
 
 
 @router.post("/responses")
 async def responses(request: Request, db: Session = Depends(get_db), key: ApiKeyRow = Depends(require_gateway_key)):
-    from app.gateway.engine import candidate_queue, ctx_for, mark_failure, mark_success, persist_log as plog
-    from app.models.database import ProviderRow
-    from app.providers.registry import get_adapter
-    import time
-
     body = await request.json()
     requested = str(body.get("model") or "")
-    allowed = json.loads(key.allowed_models or "[]")
-    if allowed and requested not in allowed and "*" not in allowed:
-        raise HTTPException(status_code=403, detail=f"model '{requested}' not allowed for this key")
-    virtual, _strategy, queue = candidate_queue(db, requested)
-    if not queue:
-        raise HTTPException(404, "no credential")
-    cred, upstream = queue[0]
-    provider = db.get(ProviderRow, cred.provider_id)
-    adapter = get_adapter(provider.type if provider else "openai_compatible")
-    call_body = dict(body)
-    call_body["model"] = upstream
-    started = time.perf_counter()
-    try:
-        chat = await adapter.responses(ctx_for(cred), call_body)
-        latency = int((time.perf_counter() - started) * 1000)
-        mark_success(cred, latency, 0)
-        from app.gateway.engine import RouteResult
-
-        result = RouteResult(
-            payload=chat.payload,
-            status_code=200,
-            real_model=upstream,
-            provider_id=cred.provider_id,
-            credential_id=cred.id,
-            virtual_model=virtual,
-            latency_ms=latency,
-        )
-        plog(db, result, key.id, requested, False)
-        db.flush()
-        return JSONResponse(chat.payload)
-    except UpstreamError as exc:
-        mark_failure(cred, exc.status_code, exc.message)
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    chat_body = chat_body_from_responses(body)
+    chat_body.setdefault("model", requested)
+    result = await _execute(db, chat_body, key, False)
+    if isinstance(result, JSONResponse):
+        return result
+    persist_log(db, result, key.id, requested, False)
+    _bump_key(db, key, result.input_tokens + result.output_tokens)
+    if result.payload is None:
+        raise HTTPException(status_code=result.status_code or 502, detail=result.error or "upstream failed")
+    transformed = responses_from_chat(ChatResult(status_code=200, payload=result.payload))
+    return JSONResponse(transformed.payload)

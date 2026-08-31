@@ -52,6 +52,7 @@ interface GatewayState {
   health: HealthSnapshot;
   metrics: OverviewMetrics;
   settings: GatewaySettings;
+  strategies: string[];
   hydrated: boolean;
   error?: string;
   hydrate: () => Promise<void>;
@@ -83,6 +84,7 @@ export const useGateway = create<GatewayState>((set, get) => ({
   circuits: [],
   health: emptyHealth,
   metrics: emptyMetrics,
+  strategies: [],
   settings: {
     gatewayUrl: GATEWAY_V1,
     timeoutMs: 60_000,
@@ -95,7 +97,7 @@ export const useGateway = create<GatewayState>((set, get) => ({
   hydrated: false,
   hydrate: async () => {
     try {
-      const [providers, credentials, models, virtualModels, keys, logs, health, metrics, circuits] = await Promise.all([
+      const [providers, credentials, models, virtualModels, keys, logs, health, metrics, circuits, caps] = await Promise.all([
         gatewayApi.listProviders(),
         gatewayApi.listCredentials(),
         gatewayApi.listModels(),
@@ -105,6 +107,7 @@ export const useGateway = create<GatewayState>((set, get) => ({
         gatewayApi.health(),
         gatewayApi.usage(),
         gatewayApi.circuits(),
+        gatewayApi.capabilities().catch(() => ({ strategies: [] as string[], adapters: {} })),
       ]);
       set({
         providers,
@@ -116,6 +119,7 @@ export const useGateway = create<GatewayState>((set, get) => ({
         health,
         metrics,
         circuits,
+        strategies: caps.strategies || [],
         hydrated: true,
         error: undefined,
       });

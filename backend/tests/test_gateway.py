@@ -221,6 +221,57 @@ def test_streaming(client, admin):
         assert "[DONE]" in text or "hi" in text
 
 
+def test_capabilities(client, admin):
+    r = client.get("/admin/capabilities", headers=admin)
+    assert r.status_code == 200
+    body = r.json()
+    assert "priority" in body["strategies"]
+    assert "least_load" not in body["strategies"]
+    assert "openai_compatible" in body["adapters"]
+
+
+def test_rpm_limit(client, admin):
+    pid, _cid, secret = create_stack(client, admin)
+    keys = client.get("/admin/api-keys", headers=admin).json()
+    kid = keys[0]["id"]
+    # patch rpm via creating a tiny-limit key
+    k = client.post("/admin/api-keys", headers=admin, json={"name": "tiny", "allowedVirtualModels": [], "rpmLimit": 1})
+    secret = k.json()["secret"]
+    import respx
+    from httpx import Response
+
+    with respx.mock:
+        respx.post("https://api.example.com/v1/chat/completions").mock(
+            return_value=Response(200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}})
+        )
+        h = {"Authorization": f"Bearer {secret}"}
+        a = client.post("/v1/chat/completions", headers=h, json={"model": "foo", "messages": [{"role": "user", "content": "hi"}]})
+        b = client.post("/v1/chat/completions", headers=h, json={"model": "foo", "messages": [{"role": "user", "content": "hi"}]})
+    assert a.status_code == 200
+    assert b.status_code == 429
+    assert b.json()["error"]["code"] == "rpm_exceeded"
+
+
+@respx.mock
+def test_responses_failover(client, admin):
+    p = client.post("/admin/providers", headers=admin, json={"descriptorId": "custom-openai", "name": "Lab", "baseUrl": "https://a.example/v1"})
+    pid = p.json()["id"]
+    client.post("/admin/credentials", headers=admin, json={"providerId": pid, "name": "A", "extra": {"apiKey": "a", "baseUrl": "https://a.example/v1"}, "priority": 1})
+    client.post("/admin/credentials", headers=admin, json={"providerId": pid, "name": "B", "extra": {"apiKey": "b", "baseUrl": "https://b.example/v1"}, "priority": 2})
+    secret = client.post("/admin/api-keys", headers=admin, json={"name": "k", "allowedVirtualModels": []}).json()["secret"]
+    respx.post("https://a.example/v1/chat/completions").mock(return_value=Response(429, json={"error": "rate"}))
+    respx.post("https://b.example/v1/chat/completions").mock(
+        return_value=Response(200, json={"choices": [{"message": {"content": "from-b"}}], "usage": {}})
+    )
+    r = client.post(
+        "/v1/responses",
+        headers={"Authorization": f"Bearer {secret}"},
+        json={"model": "foo", "input": "hi"},
+    )
+    assert r.status_code == 200
+    assert "from-b" in str(r.json())
+
+
 def test_oauth_start_bridge_offline(client, admin):
     r = client.post(
         "/admin/oauth/start",

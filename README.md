@@ -1,108 +1,77 @@
 # Universal AI Gateway
 
-One Gateway. Every Provider. Every Model. One API.
-
-私人 AI API Gateway MVP：控制面（Next.js）+ 数据面（FastAPI）。客户端只连：
+Self-hosted AI API Gateway: Next.js control plane + FastAPI data plane.
 
 ```
 BASE_URL=http://localhost:8000/v1
 API_KEY=sk-gw-xxxx
 ```
 
-## 启动（本地）
+## Implemented
+
+- OpenAI-compatible `GET /v1/models`, `POST /v1/chat/completions` (SSE), `POST /v1/responses`
+- Virtual models, credential pool, failover (429 / 5xx / timeout)
+- Circuit breaker, RPM / daily token limits, daily counter reset
+- Routing strategies from backend: priority, failover, round_robin, weighted_round_robin, least_latency, highest_success, quota_aware, health_aware, random, hybrid
+- Request logs and Usage from RequestLog (cost is 0 until model pricing is set)
+- Control plane BFF `/api/control/*` — admin secret is not shipped to the browser
+- Optional login: `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` (sha256 hex) → HttpOnly cookie
+- Adapters: OpenAI Compatible, Gemini, Ollama, CLIProxy bridge
+
+## Experimental
+
+- CLIProxy / EasyCLIProxy official OAuth bridge (`:8317`). Management API varies by version; if login URL is unavailable, use the EasyCLIProxy tray. No cookie scraping.
+- `ALLOW_LOCAL_UPSTREAM=true` for local mock/Ollama/CLIProxy loopback URLs on OpenAI-compatible adapters
+- Optional Redis (`docker compose --profile redis`) — limiter still works in-process without Redis
+
+## Planned
+
+- OIDC / GitHub / Google login
+- Native Redis-backed limiter (URL is reserved)
+- `least_load` / live `lowest_cost` (hidden until implemented)
+- Embeddings / images / audio data plane
+
+## Quick start
 
 ```bash
+# backend
 cd backend
-python -m venv .venv
-# Windows: .venv\Scripts\activate
+python -m venv .venv && .venv/Scripts/activate
 pip install -r requirements.txt
-cd ..
-copy .env.example .env
-cd backend
 set PYTHONPATH=.
-uvicorn app.main:app --reload --port 8000
+set GATEWAY_ADMIN_API_KEY=dev-admin
+set GATEWAY_SECRET_KEY=dev-secret
+set CREDENTIAL_ENCRYPTION_KEY=dev-cred
+set ALLOW_LOCAL_UPSTREAM=true
+uvicorn app.main:app --port 8000
+
+# frontend (another terminal)
+cd ..
+copy .env.example .env.local
+# set GATEWAY_BACKEND_URL=http://127.0.0.1:8000
+# set GATEWAY_ADMIN_API_KEY=dev-admin
+# set GATEWAY_SECRET_KEY=dev-secret
+npx next dev --port 3000
 ```
 
-另开终端：
-
-```bash
-npm install
-npm run dev
-```
-
-- 控制面：http://localhost:3000
-- Gateway：http://localhost:8000/v1
-- Admin 默认 Key：`gw-admin-dev-key`
-
-## 官方 OAuth 资源（EasyCLIProxy / CLIProxyAPI）
-
-Gateway **不自己抓网页 Cookie**。Gemini CLI / Claude Code / Codex / Antigravity 的官方 OAuth 由 EasyCLIProxyAPI（默认 `http://127.0.0.1:8317`）完成，再作为 OpenAI Compatible 上游接入本 Gateway。
-
-1. 安装并启动 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 或 EasyCLIProxyAPI。
-2. 在托盘 / CLI 里对 **Gemini CLI、Claude Code、Codex、Antigravity** 点官方 Login（浏览器 OAuth）。
-3. 本控制面 → 添加 Provider：`CLI OAuth Bridge` 或 `Gemini CLI OAuth` 等。
-4. Base URL 填 `http://127.0.0.1:8317`。
-5. 点 **开始官方 OAuth**（若 Management API 可用会打开官方授权页；否则按提示在 EasyCLIProxy 完成登录）。
-6. Test Connection → 同步模型。
-7. 客户端仍然只连 `http://localhost:8000/v1` + `sk-gw-xxxx`。
+Do not run `npm run dev` from the `default` workspace (C-Embedded Agent). Use this repo only.
 
 ## Docker
 
+Set secrets in the environment (no defaults in compose):
+
 ```bash
+set GATEWAY_ADMIN_API_KEY=...
+set GATEWAY_SECRET_KEY=...
+set CREDENTIAL_ENCRYPTION_KEY=...
 docker compose up -d --build
 ```
 
-SQLite 存在 volume `gateway-data`，重启不丢凭据。
+Redis: `docker compose --profile redis up -d`
 
-## 添加第一个 Credential
+## Security notes
 
-1. 控制面 → Provider → 添加 Custom OpenAI Compatible（或 OpenAI / OpenRouter / DeepSeek）
-2. 添加凭据：Base URL + API Key
-3. Test Connection
-4. 同步模型
-
-## 创建 Gateway API Key
-
-API Keys → Create。明文只显示一次，复制 `sk-gw-…`。
-
-## OpenAI SDK
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="sk-gw-xxxx",
-)
-print(client.chat.completions.create(
-    model="your-model-id",
-    messages=[{"role": "user", "content": "hello"}],
-))
-```
-
-Streaming：
-
-```python
-stream = client.chat.completions.create(
-    model="coding",
-    messages=[{"role": "user", "content": "hello"}],
-    stream=True,
-)
-for chunk in stream:
-    print(chunk.choices[0].delta.content or "", end="")
-```
-
-## 测试
-
-```bash
-cd backend
-pytest -q
-```
-
-## 真实 vs Mock
-
-**真实：** 凭据加密存储、Gateway API Key hash、`/v1/models`、`/v1/chat/completions` SSE、`/v1/responses` 基础转换、Virtual Model、failover、熔断、请求日志、Dashboard 今日指标、Health、Playground 真调用。
-
-**仍为 Mock：** Usage 页高级趋势图。OAuth CLI / Antigravity 网页登录未实现（仅 ExternalBridgeAdapter 预留）。
-
-**MVP Adapter：** OpenAI Compatible、Gemini、Ollama。
+- Admin key never uses `NEXT_PUBLIC_*`
+- Upstream URLs must be http/https; private/loopback hosts are rejected unless the adapter is local or `ALLOW_LOCAL_UPSTREAM=true`
+- SQL uses bound parameters
+- Secrets come from environment variables

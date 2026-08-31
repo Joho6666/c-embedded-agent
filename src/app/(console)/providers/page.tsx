@@ -26,12 +26,12 @@ export default function ProvidersPage() {
       />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {providers.map((p) => (
-          <div key={p.id} className="rounded-md border border-border bg-card p-3">
+          <div key={p.id} className="rounded-lg border border-border bg-card p-3.5 transition-colors hover:border-foreground/15">
             <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <ProviderMark mark={p.mark} color={p.color} />
+              <div className="flex items-center gap-2.5">
+                <ProviderMark mark={p.mark} color={p.color} size={32} />
                 <div>
-                  <div className="text-[13px] font-medium">{p.name}</div>
+                  <div className="text-[13px] font-medium tracking-tight">{p.name}</div>
                   <div className="text-[11px] text-muted-foreground">{p.family}</div>
                 </div>
               </div>
@@ -55,7 +55,7 @@ export default function ProvidersPage() {
               <CapabilityPills items={p.capabilities} max={6} />
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <Button size="sm" variant="outline" asChild>
+              <Button size="sm" asChild>
                 <Link href={`/providers/${p.id}`}>查看</Link>
               </Button>
               <Button size="sm" variant="outline" onClick={() => openCred(p.id)}>

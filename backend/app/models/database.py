@@ -15,7 +15,7 @@ class ProviderRow(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    type: Mapped[str] = mapped_column(String(40))  # openai_compatible | gemini | ollama | custom
+    type: Mapped[str] = mapped_column(String(40))
     descriptor_id: Mapped[str] = mapped_column(String(64), default="custom-openai")
     status: Mapped[str] = mapped_column(String(32), default="operational")
     base_url: Mapped[str] = mapped_column(String(500), default="")
@@ -45,6 +45,7 @@ class CredentialRow(Base):
     daily_token_limit: Mapped[int] = mapped_column(Integer, default=20000000)
     daily_request_limit: Mapped[int] = mapped_column(Integer, default=10000)
     monthly_budget: Mapped[float] = mapped_column(Float, default=20)
+    monthly_spend: Mapped[float] = mapped_column(Float, default=0)
     requests_today: Mapped[int] = mapped_column(Integer, default=0)
     tokens_today: Mapped[int] = mapped_column(Integer, default=0)
     success_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -108,6 +109,11 @@ class RequestLogRow(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    request_status: Mapped[str] = mapped_column(String(24), default="pending")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    first_token_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    stream_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     gateway_api_key_id: Mapped[str] = mapped_column(String(64), default="")
     requested_model: Mapped[str] = mapped_column(String(200), default="")
     virtual_model: Mapped[str] = mapped_column(String(80), default="")
@@ -116,6 +122,8 @@ class RequestLogRow(Base):
     credential_id: Mapped[str] = mapped_column(String(64), default="")
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    reasoning_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     ttft_ms: Mapped[int] = mapped_column(Integer, default=0)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
@@ -126,3 +134,15 @@ class RequestLogRow(Base):
     error_message: Mapped[str] = mapped_column(Text, default="")
     stream: Mapped[bool] = mapped_column(Boolean, default=False)
     trace_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class ModelPricingRow(Base):
+    __tablename__ = "model_pricing"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), default="")
+    model: Mapped[str] = mapped_column(String(200), index=True)
+    input_per_1m: Mapped[float] = mapped_column(Float, default=0)
+    output_per_1m: Mapped[float] = mapped_column(Float, default=0)
+    cached_input_per_1m: Mapped[float] = mapped_column(Float, default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="USD")

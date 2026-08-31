@@ -5,17 +5,15 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { useGateway } from "@/lib/stores/gateway";
 import type { RoutingStrategy } from "@/types";
 
-const STRATEGIES: RoutingStrategy[] = [
+const FALLBACK_STRATEGIES: RoutingStrategy[] = [
   "priority",
+  "failover",
   "round_robin",
   "weighted_round_robin",
   "least_latency",
-  "least_load",
-  "lowest_cost",
   "highest_success",
   "quota_aware",
   "health_aware",
-  "failover",
   "random",
   "hybrid",
 ];
@@ -25,7 +23,9 @@ export default function RoutingPage() {
   const models = useGateway((s) => s.models);
   const creds = useGateway((s) => s.credentials);
   const updateRoute = useGateway((s) => s.updateRoute);
+  const strategies = useGateway((s) => s.strategies);
   const [id, setId] = useState(vms[0]?.id);
+  const STRATEGIES = (strategies.length ? strategies : FALLBACK_STRATEGIES) as RoutingStrategy[];
 
   const vm = vms.find((v) => v.id === id) ?? vms[0];
 

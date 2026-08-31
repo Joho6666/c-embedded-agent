@@ -29,9 +29,9 @@ export function CommandPalette() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setOpen(false)}>
+    <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px]" onClick={() => setOpen(false)}>
       <div
-        className="mx-auto mt-[12vh] w-[min(520px,calc(100vw-24px))] overflow-hidden rounded-md border border-border bg-card shadow-2xl"
+        className="mx-auto mt-[12vh] w-[min(520px,calc(100vw-24px))] overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-border px-3 py-2 text-[11px] text-muted-foreground">跳转 · Ctrl+K</div>

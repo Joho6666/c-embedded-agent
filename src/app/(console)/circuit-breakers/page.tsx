@@ -23,7 +23,7 @@ export default function CircuitPage() {
         <Empty title="当前没有打开的熔断" hint="连续失败 / 5xx / 连接失败会进入此列表。" />
       ) : (
         <div className="overflow-auto rounded-md border border-border">
-          <table className="w-full min-w-[960px] text-left text-[12px]">
+          <table className="gw-table w-full min-w-[960px] text-left text-[12px]">
             <thead className="bg-muted/40 text-[11px] text-muted-foreground">
               <tr>
                 {["Credential", "Provider", "Reason", "Last Error", "Failures", "Opened", "Recover", "Cooldown", ""].map((h) => (

@@ -151,7 +151,7 @@ async def test_provider(pid: str, db: Session = Depends(get_db)):
     if not cred:
         return {"ok": False, "latencyMs": 0, "message": "no credential"}
     adapter = get_adapter(p.type)
-    ok, msg, code = await adapter.health_check(ctx_for(cred))
+    ok, msg, code = await adapter.health_check(ctx_for(cred, p.type))
     return {"ok": ok, "latencyMs": 0, "message": msg, "status": code}
 
 
@@ -169,7 +169,7 @@ async def sync_models(pid: str, db: Session = Depends(get_db)):
     if not cred:
         raise HTTPException(400, "no credential")
     adapter = get_adapter(p.type)
-    ids = await adapter.list_models(ctx_for(cred))
+    ids = await adapter.list_models(ctx_for(cred, p.type))
     existing = {m.model_id: m for m in db.query(ModelRow).filter(ModelRow.provider_id == pid).all()}
     for mid in ids:
         if mid in existing:
@@ -243,7 +243,7 @@ async def test_credential(cid: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "not found")
     p = db.get(ProviderRow, row.provider_id)
     adapter = get_adapter(p.type if p else "openai_compatible")
-    ok, msg, code = await adapter.health_check(ctx_for(row))
+    ok, msg, code = await adapter.health_check(ctx_for(row, p.type if p else "openai_compatible"))
     if ok:
         row.status = "healthy"
         row.last_error = ""
@@ -418,7 +418,7 @@ def usage(db: Session = Depends(get_db)):
     return {
         "requestsToday": total,
         "tokensToday": tokens,
-        "estimatedCost": 0,
+        "estimatedCost": round(sum(r.estimated_cost for r in rows), 6),
         "successRate": round((ok / total * 100) if total else 100, 2),
         "avgTtftMs": int(ttft),
         "avgLatencyMs": int(latency),
@@ -429,6 +429,32 @@ def usage(db: Session = Depends(get_db)):
         "rpm": 0,
         "activeClients": db.query(ApiKeyRow).filter(ApiKeyRow.enabled.is_(True)).count(),
     }
+
+
+@router.get("/usage/trend")
+def usage_trend(range: str = "today", db: Session = Depends(get_db)):
+    hours = {"today": 24, "24h": 24, "7d": 24 * 7, "30d": 24 * 30}.get(range, 24)
+    since = datetime.utcnow() - timedelta(hours=hours)
+    rows = db.query(RequestLogRow).filter(RequestLogRow.timestamp >= since).all()
+    buckets: dict[str, dict[str, float]] = {}
+    for r in rows:
+        key = r.timestamp.strftime("%m-%d %H:00") if hours <= 24 else r.timestamp.strftime("%m-%d")
+        b = buckets.setdefault(key, {"requests": 0, "tokens": 0, "cost": 0, "errors": 0})
+        b["requests"] += 1
+        b["tokens"] += r.total_tokens
+        b["cost"] += r.estimated_cost
+        if r.http_status != 200:
+            b["errors"] += 1
+    trend = [{"t": k, **v} for k, v in sorted(buckets.items())]
+    return {"range": range, "trend": trend}
+
+
+@router.get("/capabilities")
+def capabilities():
+    from app.gateway.engine import IMPLEMENTED_STRATEGIES
+    from app.providers.registry import adapter_capabilities
+
+    return {"strategies": IMPLEMENTED_STRATEGIES, "adapters": adapter_capabilities()}
 
 
 @router.get("/health")

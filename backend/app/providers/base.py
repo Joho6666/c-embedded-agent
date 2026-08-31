@@ -31,6 +31,15 @@ class ChatResult:
 
 class BaseProviderAdapter(ABC):
     name: str = "base"
+    supports_chat: bool = True
+    supports_responses: bool = True
+    supports_streaming: bool = True
+    supports_tools: bool = True
+    supports_vision: bool = False
+    supports_embeddings: bool = False
+    supports_images: bool = False
+    supports_audio: bool = False
+    supports_reasoning: bool = False
 
     @abstractmethod
     async def list_models(self, ctx: AdapterContext) -> list[str]:

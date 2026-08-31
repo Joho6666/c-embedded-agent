@@ -13,22 +13,36 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.ids import new_id
+from app.core.limiter import allow as rpm_allow, remaining as rpm_remaining
+from app.core.routing_state import next_index
 from app.core.security import decrypt_secret
-from app.models.database import CredentialRow, ModelRow, ProviderRow, RequestLogRow, VirtualModelRow, utcnow
+from app.core.ssrf import validate_upstream_url
+from app.gateway.usage import normalize_usage, parse_sse_usage
+from app.models.database import (
+    CredentialRow,
+    ModelPricingRow,
+    ModelRow,
+    ProviderRow,
+    RequestLogRow,
+    VirtualModelRow,
+    utcnow,
+)
 from app.providers.base import AdapterContext, UpstreamError
 from app.providers.registry import get_adapter
 
 BLOCKED_STATUSES = {"disabled", "unauthorized", "quota_exhausted", "circuit_open"}
-RETRYABLE = {429, 500, 502, 503, 504}
-
-
-@dataclass
-class Attempt:
-    credential_id: str
-    provider_id: str
-    model: str
-    error: str = ""
-    status: int = 0
+IMPLEMENTED_STRATEGIES = [
+    "priority",
+    "failover",
+    "round_robin",
+    "weighted_round_robin",
+    "least_latency",
+    "highest_success",
+    "quota_aware",
+    "health_aware",
+    "random",
+    "hybrid",
+]
 
 
 @dataclass
@@ -45,16 +59,20 @@ class RouteResult:
     fallback_count: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0
+    reasoning_tokens: int = 0
     error: str = ""
     trace: list[dict[str, Any]] = field(default_factory=list)
     stream_iter: AsyncIterator[bytes] | None = None
+    log_id: str = ""
+    request_status: str = "pending"
 
 
 def _today() -> str:
     return datetime.utcnow().strftime("%Y-%m-%d")
 
 
-def _reset_daily(row: CredentialRow) -> None:
+def reset_daily_credential(row: CredentialRow) -> None:
     day = _today()
     if row.stats_day != day:
         row.stats_day = day
@@ -62,6 +80,14 @@ def _reset_daily(row: CredentialRow) -> None:
         row.tokens_today = 0
         row.success_count = 0
         row.fail_count = 0
+
+
+def reset_daily_key(row: Any) -> None:
+    day = _today()
+    if getattr(row, "stats_day", "") != day:
+        row.stats_day = day
+        row.requests_today = 0
+        row.tokens_today = 0
 
 
 def maybe_recover_circuit(row: CredentialRow) -> None:
@@ -74,8 +100,64 @@ def maybe_recover_circuit(row: CredentialRow) -> None:
         row.circuit_opened_at = None
 
 
-def mark_success(row: CredentialRow, latency_ms: int, tokens: int) -> None:
-    _reset_daily(row)
+def extra_headers(extra: dict[str, Any]) -> dict[str, str]:
+    raw = extra.get("headers") or extra.get("custom_headers") or ""
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    headers: dict[str, str] = {}
+    if isinstance(raw, str) and raw.strip():
+        for line in raw.splitlines():
+            if ":" in line:
+                k, v = line.split(":", 1)
+                headers[k.strip()] = v.strip()
+    return headers
+
+
+def ctx_for(cred: CredentialRow, provider_type: str) -> AdapterContext:
+    extra = json.loads(cred.extra_json or "{}")
+    secret = decrypt_secret(cred.encrypted_secret) if cred.encrypted_secret else extra.get("apiKey", "")
+    base = cred.base_url or extra.get("baseUrl") or extra.get("base_url") or ""
+    validate_upstream_url(base, provider_type)
+    return AdapterContext(
+        base_url=base,
+        api_key=secret,
+        headers=extra_headers(extra),
+        timeout_s=get_settings().request_timeout_s,
+    )
+
+
+def success_rate(row: CredentialRow) -> float:
+    total = row.success_count + row.fail_count
+    return (row.success_count / total) if total else 1.0
+
+
+def quota_remaining(row: CredentialRow) -> float:
+    reset_daily_credential(row)
+    tok = 1 - (row.tokens_today / max(row.daily_token_limit, 1))
+    req = 1 - (row.requests_today / max(row.daily_request_limit, 1))
+    return min(max(tok, 0), 1) * 0.6 + min(max(req, 0), 1) * 0.4
+
+
+def credential_quota_ok(row: CredentialRow) -> bool:
+    reset_daily_credential(row)
+    if row.daily_request_limit and row.requests_today >= row.daily_request_limit:
+        row.status = "quota_exhausted"
+        return False
+    if row.daily_token_limit and row.tokens_today >= row.daily_token_limit:
+        row.status = "quota_exhausted"
+        return False
+    if row.monthly_budget and row.monthly_spend >= row.monthly_budget:
+        row.status = "quota_exhausted"
+        return False
+    if not rpm_allow(f"cred-rpm:{row.id}", row.rpm_limit):
+        row.status = "rate_limited"
+        row.cooling_until = datetime.utcnow() + timedelta(seconds=30)
+        return False
+    return True
+
+
+def mark_success(row: CredentialRow, latency_ms: int, tokens: int, cost: float = 0) -> None:
+    reset_daily_credential(row)
     row.status = "healthy"
     row.consecutive_failures = 0
     row.circuit_opened_at = None
@@ -83,6 +165,7 @@ def mark_success(row: CredentialRow, latency_ms: int, tokens: int) -> None:
     row.last_used_at = utcnow()
     row.requests_today += 1
     row.tokens_today += tokens
+    row.monthly_spend += cost
     row.success_count += 1
     if row.avg_latency_ms:
         row.avg_latency_ms = (row.avg_latency_ms * 0.8) + (latency_ms * 0.2)
@@ -91,7 +174,7 @@ def mark_success(row: CredentialRow, latency_ms: int, tokens: int) -> None:
 
 
 def mark_failure(row: CredentialRow, status: int, message: str) -> None:
-    _reset_daily(row)
+    reset_daily_credential(row)
     row.last_error = message[:800]
     row.last_used_at = utcnow()
     row.fail_count += 1
@@ -107,34 +190,6 @@ def mark_failure(row: CredentialRow, status: int, message: str) -> None:
         row.circuit_opened_at = utcnow()
 
 
-def extra_headers(extra: dict[str, Any]) -> dict[str, str]:
-    raw = extra.get("headers") or extra.get("custom_headers") or ""
-    headers: dict[str, str] = {}
-    if isinstance(raw, dict):
-        return {str(k): str(v) for k, v in raw.items()}
-    if isinstance(raw, str) and raw.strip():
-        for line in raw.splitlines():
-            if ":" in line:
-                k, v = line.split(":", 1)
-                headers[k.strip()] = v.strip()
-    return headers
-
-
-def ctx_for(cred: CredentialRow) -> AdapterContext:
-    extra = json.loads(cred.extra_json or "{}")
-    secret = decrypt_secret(cred.encrypted_secret) if cred.encrypted_secret else extra.get("apiKey", "")
-    return AdapterContext(
-        base_url=cred.base_url or extra.get("baseUrl") or extra.get("base_url") or "",
-        api_key=secret,
-        headers=extra_headers(extra),
-        timeout_s=get_settings().request_timeout_s,
-    )
-
-
-def resolve_virtual(db: Session, model: str) -> VirtualModelRow | None:
-    return db.query(VirtualModelRow).filter(VirtualModelRow.slug == model).one_or_none()
-
-
 def eligible_credentials(db: Session, provider_id: str | None = None) -> list[CredentialRow]:
     q = db.query(CredentialRow).filter(CredentialRow.enabled.is_(True))
     if provider_id:
@@ -144,78 +199,180 @@ def eligible_credentials(db: Session, provider_id: str | None = None) -> list[Cr
     now = datetime.utcnow()
     for row in rows:
         maybe_recover_circuit(row)
+        reset_daily_credential(row)
         if row.status in BLOCKED_STATUSES:
             continue
-        if row.status == "cooling" and row.cooling_until and row.cooling_until > now:
+        if row.status in {"cooling", "rate_limited"} and row.cooling_until and row.cooling_until > now:
             continue
-        if row.status == "rate_limited" and row.cooling_until and row.cooling_until > now:
+        if not credential_quota_ok(row) and row.status == "quota_exhausted":
+            continue
+        if row.status == "rate_limited":
             continue
         out.append(row)
     return out
 
 
-def order_credentials(rows: list[CredentialRow], strategy: str) -> list[CredentialRow]:
+def order_credentials(rows: list[CredentialRow], strategy: str, scope: str) -> list[CredentialRow]:
+    if not rows:
+        return []
+    if strategy in {"priority", "failover"}:
+        return sorted(rows, key=lambda r: (r.priority, -r.weight))
+    if strategy == "round_robin":
+        i = next_index(f"rr:{scope}", len(rows))
+        ordered = sorted(rows, key=lambda r: (r.priority, r.id))
+        return ordered[i:] + ordered[:i]
     if strategy == "weighted_round_robin":
-        return sorted(rows, key=lambda r: random.random() / max(r.weight, 1), reverse=True)
-    if strategy == "health_aware":
-        return sorted(rows, key=lambda r: (0 if r.status == "healthy" else 1, r.priority, -r.weight))
-    return sorted(rows, key=lambda r: (r.priority, -r.weight))
+        pool = [r for r in rows for _ in range(max(1, r.weight // 10))]
+        if not pool:
+            pool = rows
+        i = next_index(f"wrr:{scope}", len(pool))
+        pick = pool[i]
+        rest = [r for r in rows if r.id != pick.id]
+        return [pick] + rest
+    if strategy == "least_latency":
+        return sorted(rows, key=lambda r: (r.avg_latency_ms or 10_000, r.priority))
+    if strategy == "highest_success":
+        return sorted(rows, key=lambda r: (-success_rate(r), r.priority))
+    if strategy == "quota_aware":
+        return sorted(rows, key=lambda r: (-quota_remaining(r), r.priority))
+    if strategy == "random":
+        shuffled = list(rows)
+        random.shuffle(shuffled)
+        return shuffled
+    if strategy == "hybrid":
+        def score(r: CredentialRow) -> float:
+            lat = 1 / (1 + (r.avg_latency_ms or 800) / 1000)
+            return success_rate(r) * 0.4 + quota_remaining(r) * 0.3 + lat * 0.3
+
+        return sorted(rows, key=lambda r: -score(r))
+    # health_aware
+    return sorted(rows, key=lambda r: (0 if r.status == "healthy" else 1, -success_rate(r), r.avg_latency_ms or 10_000, r.priority))
+
+
+def resolve_virtual(db: Session, model: str) -> VirtualModelRow | None:
+    return db.query(VirtualModelRow).filter(VirtualModelRow.slug == model).one_or_none()
 
 
 def candidate_queue(db: Session, requested: str) -> tuple[str, str, list[tuple[CredentialRow, str]]]:
-    """Returns virtual_slug, strategy, list of (credential, upstream_model)."""
     vm = resolve_virtual(db, requested)
     if vm:
+        strategy = vm.strategy if vm.strategy in IMPLEMENTED_STRATEGIES else "failover"
         cands = json.loads(vm.candidates_json or "[]")
         queue: list[tuple[CredentialRow, str]] = []
         for item in sorted(cands, key=lambda x: (x.get("priority", 99), -x.get("weight", 0))):
             cred_id = item.get("credentialId") or item.get("credential_id")
             model_id = item.get("modelId") or item.get("model_id") or item.get("upstream_model") or requested
-            cred = None
-            if cred_id:
-                cred = db.get(CredentialRow, cred_id)
-            if cred is None and model_id:
+            cred = db.get(CredentialRow, cred_id) if cred_id else None
+            if cred is None:
                 model_row = db.query(ModelRow).filter(ModelRow.model_id == model_id).first()
                 if model_row:
                     creds = eligible_credentials(db, model_row.provider_id)
-                    cred = order_credentials(creds, vm.strategy)[0] if creds else None
+                    ordered = order_credentials(creds, strategy, vm.slug)
+                    cred = ordered[0] if ordered else None
                     model_id = model_row.model_id
             if cred and cred.enabled:
                 maybe_recover_circuit(cred)
                 if cred.status not in BLOCKED_STATUSES:
                     queue.append((cred, str(model_id)))
         if not queue:
-            for cred in order_credentials(eligible_credentials(db), vm.strategy):
+            for cred in order_credentials(eligible_credentials(db), strategy, vm.slug):
                 queue.append((cred, requested))
-        return vm.slug, vm.strategy, queue
+        return vm.slug, strategy, queue
 
     model_row = db.query(ModelRow).filter(ModelRow.model_id == requested).first()
     if model_row:
-        creds = order_credentials(eligible_credentials(db, model_row.provider_id), "priority")
+        creds = order_credentials(eligible_credentials(db, model_row.provider_id), "priority", requested)
         return "", "failover", [(c, requested) for c in creds]
-
-    creds = order_credentials(eligible_credentials(db), "priority")
+    creds = order_credentials(eligible_credentials(db), "priority", requested)
     return "", "failover", [(c, requested) for c in creds]
 
 
-def usage_of(payload: dict[str, Any]) -> tuple[int, int]:
-    usage = payload.get("usage") or {}
-    inp = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-    out = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-    return inp, out
+def estimate_cost(db: Session, model: str, usage: dict[str, int]) -> float:
+    row = db.query(ModelPricingRow).filter(ModelPricingRow.model == model).first()
+    if not row:
+        return 0.0
+    inp = usage["input_tokens"] / 1_000_000 * row.input_per_1m
+    out = usage["output_tokens"] / 1_000_000 * row.output_per_1m
+    cached = usage["cached_tokens"] / 1_000_000 * row.cached_input_per_1m
+    return round(inp + out + cached, 6)
+
+
+def apply_usage(result: RouteResult, usage: dict[str, int]) -> None:
+    result.input_tokens = usage["input_tokens"]
+    result.output_tokens = usage["output_tokens"]
+    result.cached_tokens = usage["cached_tokens"]
+    result.reasoning_tokens = usage["reasoning_tokens"]
+
+
+def persist_log(db: Session, result: RouteResult, key_id: str, requested: str, stream: bool) -> RequestLogRow:
+    now = utcnow()
+    row = None
+    if result.log_id:
+        row = db.get(RequestLogRow, result.log_id)
+    if row is None:
+        row = RequestLogRow(id=result.log_id or new_id("req"))
+        db.add(row)
+        result.log_id = row.id
+    row.timestamp = now
+    row.request_status = result.request_status
+    row.started_at = row.started_at or now
+    row.completed_at = now if result.request_status in {"ok", "error"} else None
+    row.stream_completed = stream and result.request_status == "ok"
+    row.gateway_api_key_id = key_id
+    row.requested_model = requested
+    row.virtual_model = result.virtual_model
+    row.real_model = result.real_model
+    row.provider_id = result.provider_id
+    row.credential_id = result.credential_id
+    row.input_tokens = result.input_tokens
+    row.output_tokens = result.output_tokens
+    row.cached_tokens = result.cached_tokens
+    row.reasoning_tokens = result.reasoning_tokens
+    row.total_tokens = result.input_tokens + result.output_tokens
+    row.ttft_ms = result.ttft_ms
+    row.latency_ms = result.latency_ms
+    row.http_status = result.status_code
+    row.retry_count = result.retry_count
+    row.fallback_count = result.fallback_count
+    row.estimated_cost = estimate_cost(db, result.real_model or requested, {
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cached_tokens": result.cached_tokens,
+    })
+    row.error_message = result.error
+    row.stream = stream
+    row.trace_json = json.dumps(result.trace, ensure_ascii=False)
+    return row
+
+
+def begin_log(db: Session, key_id: str, requested: str, stream: bool, virtual: str) -> RequestLogRow:
+    row = RequestLogRow(
+        id=new_id("req"),
+        timestamp=utcnow(),
+        request_status="pending",
+        started_at=utcnow(),
+        gateway_api_key_id=key_id,
+        requested_model=requested,
+        virtual_model=virtual,
+        stream=stream,
+    )
+    db.add(row)
+    db.flush()
+    return row
 
 
 async def execute_chat(db: Session, body: dict[str, Any], stream: bool = False) -> RouteResult:
     settings = get_settings()
     requested = str(body.get("model") or "")
     virtual, strategy, queue = candidate_queue(db, requested)
-    result = RouteResult(virtual_model=virtual, real_model=requested)
+    result = RouteResult(virtual_model=virtual, real_model=requested, request_status="pending")
     result.trace.append({"label": "Request received", "kind": "info", "detail": requested})
     if virtual:
         result.trace.append({"label": f"Selected virtual model: {virtual}", "kind": "info"})
     if not queue:
         result.status_code = 404
         result.error = f"No healthy credential for model '{requested}'"
+        result.request_status = "error"
         result.trace.append({"label": result.error, "kind": "error"})
         return result
 
@@ -226,48 +383,84 @@ async def execute_chat(db: Session, body: dict[str, Any], stream: bool = False) 
     for cred, upstream_model in queue[:max_attempts]:
         attempts += 1
         provider = db.get(ProviderRow, cred.provider_id)
-        adapter = get_adapter(provider.type if provider else "openai_compatible")
-        ctx = ctx_for(cred)
-        if not ctx.base_url:
-            last_error = "missing base_url"
+        ptype = provider.type if provider else "openai_compatible"
+        adapter = get_adapter(ptype)
+        try:
+            ctx = ctx_for(cred, ptype)
+        except ValueError as exc:
+            last_error = str(exc)
             last_status = 400
+            result.trace.append({"label": "invalid upstream", "kind": "error", "detail": str(exc)})
             continue
         call_body = dict(body)
         call_body["model"] = upstream_model
         result.trace.append(
-            {"label": f"Selected {cred.name}", "kind": "info", "detail": f"{provider.name if provider else cred.provider_id} / {upstream_model}"}
+            {
+                "label": f"Selected {cred.name}",
+                "kind": "info",
+                "detail": f"{provider.name if provider else cred.provider_id} / {upstream_model}",
+            }
         )
         started = time.perf_counter()
         try:
             if stream:
                 agen = adapter.stream_chat_completion(ctx, call_body)
-                cred_id = cred.id
+                first_buf = b""
+                agen_iter = agen.__aiter__()
+                try:
+                    first_buf = await agen_iter.__anext__()
+                except StopAsyncIteration:
+                    first_buf = b""
+                except UpstreamError:
+                    raise
+                except httpx.TimeoutException:
+                    raise
 
-                async def _wrap(
-                    _agen=agen,
-                    _cred_id=cred_id,
-                    _started=started,
-                ) -> AsyncIterator[bytes]:
+                async def _wrap(_iter=agen_iter, _first=first_buf, _started=started, _cred_id=cred.id) -> AsyncIterator[bytes]:
                     from app.core.database import SessionLocal
 
                     first = True
+                    usage_acc: dict[str, int] = {}
                     try:
-                        async for chunk in _agen:
+                        if _first:
+                            result.ttft_ms = int((time.perf_counter() - _started) * 1000)
+                            first = False
+                            yield _first
+                        async for chunk in _iter:
                             if first:
                                 result.ttft_ms = int((time.perf_counter() - _started) * 1000)
                                 first = False
+                            text = chunk.decode("utf-8", errors="ignore")
+                            for line in text.splitlines():
+                                if line.startswith("data:"):
+                                    raw = line[5:].strip()
+                                    if raw and raw != "[DONE]":
+                                        try:
+                                            obj = json.loads(raw)
+                                            parsed = parse_sse_usage(obj)
+                                            if parsed:
+                                                usage_acc = parsed
+                                        except Exception:
+                                            pass
                             yield chunk
                         latency = int((time.perf_counter() - _started) * 1000)
                         result.latency_ms = latency
+                        if usage_acc:
+                            apply_usage(result, usage_acc)
+                        result.request_status = "ok"
+                        result.status_code = 200
                         s = SessionLocal()
                         try:
                             row = s.get(CredentialRow, _cred_id)
                             if row:
-                                mark_success(row, latency, 0)
+                                mark_success(row, latency, result.input_tokens + result.output_tokens)
                                 s.commit()
                         finally:
                             s.close()
                     except UpstreamError as exc:
+                        result.status_code = exc.status_code
+                        result.error = exc.message
+                        result.request_status = "error"
                         s = SessionLocal()
                         try:
                             row = s.get(CredentialRow, _cred_id)
@@ -278,6 +471,9 @@ async def execute_chat(db: Session, body: dict[str, Any], stream: bool = False) 
                             s.close()
                         raise
                     except httpx.TimeoutException as exc:
+                        result.status_code = 504
+                        result.error = "timeout"
+                        result.request_status = "error"
                         s = SessionLocal()
                         try:
                             row = s.get(CredentialRow, _cred_id)
@@ -295,21 +491,23 @@ async def execute_chat(db: Session, body: dict[str, Any], stream: bool = False) 
                 result.retry_count = max(0, attempts - 1)
                 result.fallback_count = max(0, attempts - 1)
                 result.status_code = 200
+                result.request_status = "streaming"
                 return result
 
             chat = await adapter.chat_completion(ctx, call_body)
             latency = int((time.perf_counter() - started) * 1000)
-            inp, out = usage_of(chat.payload)
-            mark_success(cred, latency, inp + out)
+            usage = normalize_usage(chat.payload)
+            apply_usage(result, usage)
+            cost = estimate_cost(db, chat.payload.get("model") or upstream_model, usage)
+            mark_success(cred, latency, usage["total_tokens"], cost)
             result.payload = chat.payload
             result.status_code = 200
+            result.request_status = "ok"
             result.real_model = chat.payload.get("model") or upstream_model
             result.provider_id = cred.provider_id
             result.credential_id = cred.id
             result.latency_ms = latency
             result.ttft_ms = latency
-            result.input_tokens = inp
-            result.output_tokens = out
             result.retry_count = max(0, attempts - 1)
             result.fallback_count = max(0, attempts - 1)
             result.trace.append({"label": "200 OK", "kind": "ok"})
@@ -342,33 +540,7 @@ async def execute_chat(db: Session, body: dict[str, Any], stream: bool = False) 
 
     result.status_code = last_status if last_status else 502
     result.error = last_error or "upstream failed"
+    result.request_status = "error"
     result.retry_count = max(0, attempts - 1)
     result.fallback_count = max(0, attempts - 1)
     return result
-
-
-def persist_log(db: Session, result: RouteResult, key_id: str, requested: str, stream: bool) -> RequestLogRow:
-    row = RequestLogRow(
-        id=new_id("req"),
-        timestamp=utcnow(),
-        gateway_api_key_id=key_id,
-        requested_model=requested,
-        virtual_model=result.virtual_model,
-        real_model=result.real_model,
-        provider_id=result.provider_id,
-        credential_id=result.credential_id,
-        input_tokens=result.input_tokens,
-        output_tokens=result.output_tokens,
-        total_tokens=result.input_tokens + result.output_tokens,
-        ttft_ms=result.ttft_ms,
-        latency_ms=result.latency_ms,
-        http_status=result.status_code,
-        retry_count=result.retry_count,
-        fallback_count=result.fallback_count,
-        estimated_cost=0,
-        error_message=result.error,
-        stream=stream,
-        trace_json=json.dumps(result.trace, ensure_ascii=False),
-    )
-    db.add(row)
-    return row

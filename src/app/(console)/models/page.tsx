@@ -42,7 +42,7 @@ export default function ModelsPage() {
         ))}
       </div>
       <div className="overflow-auto rounded-md border border-border">
-        <table className="w-full min-w-[1080px] text-left text-[12px]">
+        <table className="gw-table w-full min-w-[1080px] text-left text-[12px]">
           <thead className="bg-muted/40 text-[11px] text-muted-foreground">
             <tr>
               {["Model", "Provider", "Model ID", "能力", "Context", "In / Out", "TTFT", "速度", "成功率", "Cred", "状态"].map(

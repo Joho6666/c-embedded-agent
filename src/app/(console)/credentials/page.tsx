@@ -70,7 +70,7 @@ export default function CredentialsPage() {
       </div>
       {view === "table" ? (
         <div className="overflow-auto rounded-md border border-border">
-          <table className="w-full min-w-[1100px] text-left text-[12px]">
+          <table className="gw-table w-full min-w-[1100px] text-left text-[12px]">
             <thead className="bg-muted/40 text-[11px] text-muted-foreground">
               <tr>
                 {["名称", "Provider", "认证", "状态", "P", "权重", "请求", "Token", "RPM", "额度", "延迟", "成功率", "最后使用"].map(

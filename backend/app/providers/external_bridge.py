@@ -155,7 +155,7 @@ async def start_official_oauth(base_url: str, management_key: str, family: str) 
                 }
 
     return {
-        "ok": True,
+        "ok": False,
         "bridgeOnline": True,
         "family": family,
         "label": meta["label"],

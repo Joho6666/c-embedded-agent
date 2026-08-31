@@ -1,5 +1,3 @@
-const ADMIN = process.env.NEXT_PUBLIC_GATEWAY_ADMIN_API || "http://localhost:8000";
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_API_KEY || "gw-admin-dev-key";
 export const GATEWAY_V1 = process.env.NEXT_PUBLIC_GATEWAY_PUBLIC_URL || "http://localhost:8000/v1";
 
 export class ApiError extends Error {
@@ -11,17 +9,34 @@ export class ApiError extends Error {
   }
 }
 
+function errorMessage(text: string, fallback: string) {
+  if (!text) return fallback;
+  try {
+    const j = JSON.parse(text) as { detail?: unknown; message?: string; error?: { message?: string } };
+    if (typeof j.detail === "string") return j.detail;
+    if (Array.isArray(j.detail)) {
+      return j.detail.map((x: { msg?: string }) => x.msg || JSON.stringify(x)).join("; ");
+    }
+    return j.error?.message || j.message || text;
+  } catch {
+    return text.slice(0, 400) || fallback;
+  }
+}
+
 export async function adminFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${ADMIN_KEY}`);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const res = await fetch(`${ADMIN}${path}`, { ...init, headers });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new ApiError(res.status, text.slice(0, 400) || res.statusText);
+  const adminPath = path.startsWith("/admin/") ? path.slice("/admin".length) : path;
+  const res = await fetch(`/api/control${adminPath}`, { ...init, headers, credentials: "include" });
+  if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login";
   }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const text = await res.text();
+  if (!res.ok) {
+    throw new ApiError(res.status, errorMessage(text, res.statusText));
+  }
+  if (res.status === 204 || !text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export function playgroundKey(): string {

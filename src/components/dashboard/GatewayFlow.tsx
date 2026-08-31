@@ -2,33 +2,36 @@
 
 import { useEffect, useState } from "react";
 import { useGateway } from "@/lib/stores/gateway";
-import { trafficShare } from "@/lib/mock";
-import { overviewMetrics } from "@/lib/mock";
 import { formatNumber } from "@/lib/format";
 
 export function GatewayFlow() {
   const healthy = useGateway((s) => s.credentials.filter((c) => c.status === "healthy").length);
-  const [rpm, setRpm] = useState(overviewMetrics.rpm);
+  const metrics = useGateway((s) => s.metrics);
+  const vms = useGateway((s) => s.virtualModels);
+  const providers = useGateway((s) => s.providers);
+  const [rpm, setRpm] = useState(0);
 
   useEffect(() => {
-    const t = setInterval(() => {
-      setRpm((n) => Math.max(80, n + Math.round(Math.random() * 10 - 4)));
-    }, 1800);
-    return () => clearInterval(t);
-  }, []);
+    setRpm(metrics.rpm);
+  }, [metrics.rpm]);
 
   const stages = [
-    { title: "Clients", sub: `${overviewMetrics.activeClients} Active` },
+    { title: "Clients", sub: `${metrics.activeClients} Active` },
     { title: "API Gateway", sub: `${rpm} req/min` },
-    { title: "Virtual Model", sub: "8 aliases" },
-    { title: "Smart Router", sub: "hybrid + failover" },
+    { title: "Virtual Model", sub: `${vms.length} aliases` },
+    { title: "Smart Router", sub: "failover · health aware" },
   ];
+  const totalReq = Math.max(1, providers.reduce((n, p) => n + p.requestsToday, 0));
+  const trafficShare = providers
+    .map((p) => ({ providerId: p.id, name: p.name, pct: Math.round((p.requestsToday / totalReq) * 100), color: p.color }))
+    .filter((p) => p.pct > 0)
+    .slice(0, 6);
 
   return (
     <div className="rounded-md border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="text-[12px] font-medium">Gateway Flow</div>
-        <div className="text-[11px] text-muted-foreground">实时流量分配 · mock stream</div>
+        <div className="text-[11px] text-muted-foreground">实时流量分配</div>
       </div>
       <div className="grid gap-2 lg:grid-cols-[1fr_16px_1fr_16px_1fr_16px_1fr]">
         {stages.map((s, i) => (

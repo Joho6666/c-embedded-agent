@@ -1,146 +1,194 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGateway } from "@/lib/stores/gateway";
-import { formatMs, formatUsd } from "@/lib/format";
-import { uid } from "@/lib/utils";
-import type { RequestLog, TraceEvent } from "@/types";
+import { formatMs } from "@/lib/format";
+import { gatewayApi } from "@/lib/services/gateway";
+import { playgroundKey, setPlaygroundKey } from "@/lib/api/http";
+import { toast } from "sonner";
 
-const SAMPLE =
-  "You are a coding agent. Explain how to implement a weighted failover router for LLM providers in 6 bullets.";
+const SAMPLE = "Reply with one short sentence: gateway playground ok.";
 
 export default function PlaygroundPage() {
   const vms = useGateway((s) => s.virtualModels);
   const models = useGateway((s) => s.models);
-  const prepend = useGateway((s) => s.prependLog);
-  const [vm, setVm] = useState("coding");
+  const providers = useGateway((s) => s.providers);
+  const creds = useGateway((s) => s.credentials);
+  const reloadLogs = useGateway((s) => s.reloadLogs);
+  const [vm, setVm] = useState("");
   const [real, setReal] = useState("auto");
   const [system, setSystem] = useState("You are Universal AI Gateway Playground.");
   const [message, setMessage] = useState(SAMPLE);
   const [temp, setTemp] = useState([0.2]);
-  const [maxTokens, setMaxTokens] = useState([800]);
+  const [maxTokens, setMaxTokens] = useState([256]);
   const [stream, setStream] = useState(true);
-  const [tools, setTools] = useState(true);
-  const [jsonMode, setJsonMode] = useState(false);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
+  const [key, setKey] = useState("");
   const [meta, setMeta] = useState<{
     provider: string;
     credential: string;
     model: string;
-    route: string[];
     ttft: number;
     latency: number;
     inTok: number;
     outTok: number;
-    cost: number;
+    status: string;
   } | null>(null);
 
+  useEffect(() => {
+    setKey(playgroundKey());
+  }, []);
+  useEffect(() => {
+    if (!vm) {
+      const first = vms[0]?.slug || models[0]?.modelId || "";
+      if (first) setVm(first);
+    }
+  }, [vm, vms, models]);
+
   async function send() {
+    if (!key) {
+      toast.error("填写 Gateway API Key（sk-gw-…）");
+      return;
+    }
+    setPlaygroundKey(key);
     setRunning(true);
     setOutput("");
-    const route = [
-      "coding → OpenAI Credential A",
-      "HTTP 429 rate_limit_exceeded",
-      "Fallback",
-      "Claude Production",
-      "200 OK",
-    ];
-    setMeta({
-      provider: "Anthropic",
-      credential: "Claude Production",
-      model: "claude-sonnet-4",
-      route,
-      ttft: 620,
-      latency: 1840,
-      inTok: 412,
-      outTok: 286,
-      cost: 0.0124,
-    });
-    const text = stream
-      ? "coding → OpenAI 429 → Claude Success.\n\n1. Treat Virtual Model as an alias, never a vendor id.\n2. Score candidates by health, remaining quota, and weight.\n3. On 429, immediately switch credential in the same provider pool.\n4. On 401, disable the credential and fail over.\n5. After 5 consecutive failures, open the circuit.\n6. Stream only after the first hop commits, or buffer for in-band failover."
-      : "Non-stream response: failover completed via Claude Production.";
-    if (stream) {
-      for (const ch of text) {
-        setOutput((s) => s + ch);
-        await new Promise((r) => setTimeout(r, 8));
-      }
-    } else {
-      await new Promise((r) => setTimeout(r, 400));
-      setOutput(text);
-    }
-    const now = new Date();
-    const trace: TraceEvent[] = [
-      { at: now.toLocaleTimeString("zh-CN", { hour12: false }), label: "Request received", kind: "info" },
-      { at: now.toLocaleTimeString("zh-CN", { hour12: false }), label: `Selected virtual model: ${vm}`, kind: "info" },
-      { at: now.toLocaleTimeString("zh-CN", { hour12: false }), label: "Selected OpenAI Credential A", kind: "info" },
-      { at: now.toLocaleTimeString("zh-CN", { hour12: false }), label: "429 Rate Limited", kind: "error" },
-      { at: now.toLocaleTimeString("zh-CN", { hour12: false }), label: "Fallback", kind: "warn" },
-      { at: now.toLocaleTimeString("zh-CN", { hour12: false }), label: "Selected Claude Production", kind: "info" },
-      { at: now.toLocaleTimeString("zh-CN", { hour12: false }), label: "200 OK", kind: "ok" },
-    ];
-    const log: RequestLog = {
-      id: uid("req"),
-      callId: uid("req"),
-      time: now.toISOString(),
-      clientKeyId: "key_desk",
-      virtualModel: vm,
-      realModel: "claude-sonnet-4",
-      providerId: "anthropic",
-      credentialId: "cred_an_a",
-      status: 200,
-      inputTokens: 412,
-      outputTokens: 286,
-      cachedTokens: 0,
-      ttftMs: 620,
-      latencyMs: 1840,
-      retries: 1,
-      fallbackCount: 1,
-      cost: 0.0124,
+    setMeta(null);
+    const model = real === "auto" ? vm : real;
+    const body = {
+      model,
       stream,
-      trace,
+      temperature: temp[0],
+      max_tokens: maxTokens[0],
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: message },
+      ],
     };
-    prepend(log);
-    setRunning(false);
+    const started = performance.now();
+    try {
+      const res = await gatewayApi.chatCompletions(body, key);
+      if (stream && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let text = "";
+        let ttft = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!ttft) ttft = performance.now() - started;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split("\n\n");
+          buf = parts.pop() ?? "";
+          for (const part of parts) {
+            const line = part.split("\n").find((l) => l.startsWith("data:"));
+            if (!line) continue;
+            const data = line.slice(5).trim();
+            if (data === "[DONE]") continue;
+            try {
+              const json = JSON.parse(data);
+              const piece = json.choices?.[0]?.delta?.content;
+              if (piece) {
+                text += piece;
+                setOutput(text);
+              }
+            } catch {
+              /* ignore parse */
+            }
+          }
+        }
+        const latency = performance.now() - started;
+        setMeta({
+          provider: "—",
+          credential: "—",
+          model,
+          ttft: Math.round(ttft),
+          latency: Math.round(latency),
+          inTok: 0,
+          outTok: 0,
+          status: String(res.status),
+        });
+      } else {
+        const json = await res.json();
+        const text = json.choices?.[0]?.message?.content ?? json.error?.message ?? JSON.stringify(json);
+        setOutput(typeof text === "string" ? text : JSON.stringify(text));
+        const usage = json.usage || {};
+        setMeta({
+          provider: "—",
+          credential: "—",
+          model: json.model || model,
+          ttft: Math.round(performance.now() - started),
+          latency: Math.round(performance.now() - started),
+          inTok: usage.prompt_tokens || 0,
+          outTok: usage.completion_tokens || 0,
+          status: String(res.status),
+        });
+      }
+      await reloadLogs();
+    } catch (e) {
+      setOutput(e instanceof Error ? e.message : "request failed");
+      toast.error("调用失败");
+    } finally {
+      setRunning(false);
+    }
   }
+
+  const last = useGateway((s) => s.logs[0]);
 
   return (
     <div>
-      <PageHeader title="API Playground" description="模拟一次真实 Gateway 调用，包含 429 与 Fallback。" />
+      <PageHeader title="API Playground" description="真实调用 POST /v1/chat/completions，支持 SSE。" />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-3 rounded-md border border-border bg-card p-3">
+          <div className="grid gap-1">
+            <Label>Gateway API Key</Label>
+            <Input
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder="sk-gw-…"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="grid gap-1">
-              <Label>Virtual Model</Label>
+              <Label>Model</Label>
               <Select value={vm} onValueChange={setVm}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="选择模型" />
                 </SelectTrigger>
                 <SelectContent>
                   {vms.map((v) => (
                     <SelectItem key={v.id} value={v.slug}>
-                      {v.slug}
+                      {v.slug} (virtual)
+                    </SelectItem>
+                  ))}
+                  {models.map((m) => (
+                    <SelectItem key={m.id} value={m.modelId}>
+                      {m.modelId}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-1">
-              <Label>Real Model override</Label>
+              <Label>Override</Label>
               <Select value={real} onValueChange={setReal}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="auto">auto (router)</SelectItem>
-                  {models.slice(0, 20).map((m) => (
+                  {models.map((m) => (
                     <SelectItem key={m.id} value={m.modelId}>
                       {m.modelId}
                     </SelectItem>
@@ -165,18 +213,10 @@ export default function PlaygroundPage() {
             <Label>Max Tokens {maxTokens[0]}</Label>
             <Slider min={64} max={4096} step={64} value={maxTokens} onValueChange={setMaxTokens} />
           </div>
-          <div className="flex flex-wrap gap-4 text-[12px]">
-            <label className="flex items-center gap-2">
-              <Switch checked={stream} onCheckedChange={setStream} /> Streaming
-            </label>
-            <label className="flex items-center gap-2">
-              <Switch checked={tools} onCheckedChange={setTools} /> Tools
-            </label>
-            <label className="flex items-center gap-2">
-              <Switch checked={jsonMode} onCheckedChange={setJsonMode} /> JSON Mode
-            </label>
-          </div>
-          <Button disabled={running} onClick={send}>
+          <label className="flex items-center gap-2 text-[12px]">
+            <Switch checked={stream} onCheckedChange={setStream} /> Streaming
+          </label>
+          <Button disabled={running} onClick={() => void send()}>
             {running ? "Running…" : "Send"}
           </Button>
         </div>
@@ -187,14 +227,18 @@ export default function PlaygroundPage() {
           </pre>
           {meta && (
             <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
-              <KV k="Provider" v={meta.provider} />
-              <KV k="Credential" v={meta.credential} />
+              <KV k="Status" v={meta.status} />
               <KV k="Actual Model" v={meta.model} />
               <KV k="TTFT" v={formatMs(meta.ttft)} />
               <KV k="Latency" v={formatMs(meta.latency)} />
               <KV k="Tokens" v={`${meta.inTok} / ${meta.outTok}`} />
-              <KV k="Cost" v={formatUsd(meta.cost, 4)} />
-              <KV k="Route" v={meta.route.join(" → ")} />
+              <KV k="Requested" v={real === "auto" ? vm : real} />
+            </div>
+          )}
+          {last && (
+            <div className="mt-3 text-[12px] text-muted-foreground">
+              Last log: {last.realModel || last.virtualModel} · {providers.find((p) => p.id === last.providerId)?.name} ·{" "}
+              {creds.find((c) => c.id === last.credentialId)?.name} · fallback {last.fallbackCount}
             </div>
           )}
         </div>

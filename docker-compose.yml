@@ -1,0 +1,37 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:////data/gateway.db
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY:-change-me-gateway-secret}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-change-me-credential-key}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-gw-admin-dev-key}
+      GATEWAY_PUBLIC_URL: http://localhost:8000/v1
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - gateway-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_GATEWAY_ADMIN_API: http://localhost:8000
+        NEXT_PUBLIC_ADMIN_API_KEY: ${ADMIN_API_KEY:-gw-admin-dev-key}
+        NEXT_PUBLIC_GATEWAY_PUBLIC_URL: http://localhost:8000/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  gateway-data:

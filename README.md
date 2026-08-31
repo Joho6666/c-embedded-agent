@@ -1,42 +1,96 @@
 # Universal AI Gateway
 
-One Gateway. Every Provider. Every Model. Every Credential. One API.
+One Gateway. Every Provider. Every Model. One API.
 
-把 OpenAI / Gemini / Claude / GLM / Kimi / DeepSeek / OpenRouter / 火山方舟 / 百炼 / 混元 / SiliconFlow / Ollama 以及自定义 OpenAI Compatible 上游，统一到：
+私人 AI API Gateway MVP：控制面（Next.js）+ 数据面（FastAPI）。客户端只连：
 
 ```
 BASE_URL=http://localhost:8000/v1
 API_KEY=sk-gw-xxxx
 ```
 
-当前仓库是可运行的 Control Plane 前端 Prototype。Mock 数据 + Zustand 可变状态 + `lib/services` 预留 REST 延迟，方便以后接真实 Gateway。
+## 启动（本地）
 
-## 启动
+```bash
+cd backend
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cd ..
+copy .env.example .env
+cd backend
+set PYTHONPATH=.
+uvicorn app.main:app --reload --port 8000
+```
+
+另开终端：
 
 ```bash
 npm install
 npm run dev
 ```
 
-打开 http://localhost:3000 。默认 Dark Mode。`Ctrl+K` 打开命令面板。
+- 控制面：http://localhost:3000
+- Gateway：http://localhost:8000/v1
+- Admin 默认 Key：`gw-admin-dev-key`
 
-## 概念
+## Docker
 
+```bash
+docker compose up -d --build
 ```
-Client → Gateway API → Virtual Model → Router → Provider → Credential → Real Model
+
+SQLite 存在 volume `gateway-data`，重启不丢凭据。
+
+## 添加第一个 Credential
+
+1. 控制面 → Provider → 添加 Custom OpenAI Compatible（或 OpenAI / OpenRouter / DeepSeek）
+2. 添加凭据：Base URL + API Key
+3. Test Connection
+4. 同步模型
+
+## 创建 Gateway API Key
+
+API Keys → Create。明文只显示一次，复制 `sk-gw-…`。
+
+## OpenAI SDK
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="sk-gw-xxxx",
+)
+print(client.chat.completions.create(
+    model="your-model-id",
+    messages=[{"role": "user", "content": "hello"}],
+))
 ```
 
-- **Provider**：服务商
-- **Credential**：官方支持的认证（API Key / OAuth / Project / Local）。不做 Cookie / Session 窃取
-- **Real Model**：上游模型
-- **Virtual Model**：客户端别名（`coding` / `fast` / `cheap`）
-- **Routing Policy**：权重、Failover、熔断规则
-- **API Key**：谁可以调用你的 Gateway
+Streaming：
 
-## 页面
+```python
+stream = client.chat.completions.create(
+    model="coding",
+    messages=[{"role": "user", "content": "hello"}],
+    stream=True,
+)
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="")
+```
 
-概览 · Provider · 凭据池 · 模型中心 · 虚拟模型 · 路由策略 · API Keys · 请求日志 · 用量与成本 · 额度 · 健康状态 · 熔断中心 · API Playground · 开发者接入 · 系统设置
+## 测试
 
-## 技术栈
+```bash
+cd backend
+pytest -q
+```
 
-Next.js 15 · React 19 · TypeScript · Tailwind 4 · shadcn/ui · Zustand · Recharts · Lucide
+## 真实 vs Mock
+
+**真实：** 凭据加密存储、Gateway API Key hash、`/v1/models`、`/v1/chat/completions` SSE、`/v1/responses` 基础转换、Virtual Model、failover、熔断、请求日志、Dashboard 今日指标、Health、Playground 真调用。
+
+**仍为 Mock：** Usage 页高级趋势图。OAuth CLI / Antigravity 网页登录未实现（仅 ExternalBridgeAdapter 预留）。
+
+**MVP Adapter：** OpenAI Compatible、Gemini、Ollama。

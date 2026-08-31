@@ -42,7 +42,8 @@ export function formatClock(iso: string) {
   return new Date(iso).toLocaleTimeString("zh-CN", { hour12: false });
 }
 
-export function formatDateTime(iso: string) {
+export function formatDateTime(iso?: string | null) {
+  if (!iso) return "—";
   return new Date(iso).toLocaleString("zh-CN", { hour12: false });
 }
 
@@ -55,7 +56,7 @@ export function copyText(text: string) {
   return navigator.clipboard.writeText(text);
 }
 
-export function remainingLabel(iso?: string) {
+export function remainingLabel(iso?: string | null) {
   if (!iso) return "";
   const sec = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 1000));
   const m = Math.floor(sec / 60);

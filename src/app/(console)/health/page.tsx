@@ -20,12 +20,12 @@ export default function HealthPage() {
         description="Gateway · Database · Redis · Providers · Credentials · Models · Worker"
         actions={
           <Button
-            onClick={() => {
-              refresh();
+            onClick={async () => {
+              await refresh();
               toast.success("Health check 完成");
             }}
           >
-            Mock Health Check
+            Health Check
           </Button>
         }
       />

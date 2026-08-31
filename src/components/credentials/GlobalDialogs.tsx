@@ -19,6 +19,7 @@ import { CredStatus, RequestStatus } from "@/components/common/StatusBadge";
 import { formatCompact, formatDateTime, formatMs, formatPercent, formatUsd, quotaPct, relativeTime, remainingLabel } from "@/lib/format";
 import { toast } from "sonner";
 import { gatewayApi } from "@/lib/services/gateway";
+import { setPlaygroundKey } from "@/lib/api/http";
 import type { AuthScheme, VirtualCandidate } from "@/types";
 import { Badge } from "@/components/ui/badge";
 
@@ -83,10 +84,14 @@ function AddProviderDialog() {
               取消
             </Button>
             <Button
-              onClick={() => {
-                add({ descriptorId: pick, name: name || d?.name, baseUrl: baseUrl || d?.defaultBaseUrl });
-                toast.success("Provider 已添加");
-                close();
+              onClick={async () => {
+                try {
+                  await add({ descriptorId: pick, name: name || d?.name, baseUrl: baseUrl || d?.defaultBaseUrl });
+                  toast.success("Provider 已添加");
+                  close();
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "添加失败");
+                }
               }}
             >
               添加
@@ -174,19 +179,23 @@ function AddCredentialDialog() {
               取消
             </Button>
             <Button
-              onClick={() => {
+              onClick={async () => {
                 if (!values.name) {
                   toast.error("请填写 Credential Name");
                   return;
                 }
-                add({
-                  providerId: preset || providerId,
-                  name: values.name,
-                  authType,
-                  extra: values,
-                });
-                toast.success("凭据已加入池中");
-                close();
+                try {
+                  await add({
+                    providerId: preset || providerId,
+                    name: values.name,
+                    authType,
+                    extra: values,
+                  });
+                  toast.success("凭据已加入池中");
+                  close();
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "保存失败");
+                }
               }}
             >
               保存
@@ -361,7 +370,7 @@ function CreateKeyDialog() {
   const vms = useGateway((s) => s.virtualModels);
   const add = useGateway((s) => s.addKey);
   const [name, setName] = useState("");
-  const [models, setModels] = useState<string[]>(["coding", "fast"]);
+  const [models, setModels] = useState<string[]>([]);
   const [created, setCreated] = useState<string>();
 
   return (
@@ -417,19 +426,24 @@ function CreateKeyDialog() {
                 取消
               </Button>
               <Button
-                onClick={() => {
+                onClick={async () => {
                   if (!name) return toast.error("填写名称");
-                  const k = add({
-                    name,
-                    allowedVirtualModels: models,
-                    rpmLimit: 120,
-                    tpmLimit: 400_000,
-                    dailyTokenLimit: 10_000_000,
-                    monthlyBudget: 40,
-                    ipWhitelist: [],
-                  });
-                  setCreated(k.secret);
-                  toast.success("API Key 已创建");
+                  try {
+                    const k = await add({
+                      name,
+                      allowedVirtualModels: models,
+                      rpmLimit: 120,
+                      tpmLimit: 400_000,
+                      dailyTokenLimit: 10_000_000,
+                      monthlyBudget: 40,
+                      ipWhitelist: [],
+                    });
+                    setCreated(k.secret);
+                    setPlaygroundKey(k.secret);
+                    toast.success("API Key 已创建");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "创建失败");
+                  }
                 }}
               >
                 创建
@@ -504,20 +518,24 @@ function CreateVirtualDialog() {
               取消
             </Button>
             <Button
-              onClick={() => {
+              onClick={async () => {
                 if (!slug) return toast.error("填写 slug");
-                add({
-                  slug,
-                  name: slug,
-                  description: desc,
-                  candidates: cands,
-                  strategy: "failover",
-                  fallbackChain: [],
-                });
-                toast.success("虚拟模型已创建");
-                setOpen(false);
-                setSlug("");
-                setCands([]);
+                try {
+                  await add({
+                    slug,
+                    name: slug,
+                    description: desc,
+                    candidates: cands,
+                    strategy: "failover",
+                    fallbackChain: [],
+                  });
+                  toast.success("虚拟模型已创建");
+                  setOpen(false);
+                  setSlug("");
+                  setCands([]);
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "创建失败");
+                }
               }}
             >
               创建

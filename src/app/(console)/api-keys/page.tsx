@@ -72,9 +72,9 @@ export default function ApiKeysPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => {
-                      const n = rotate(k.id);
-                      toast.success(`已轮换 ${n.prefix}…`);
+                    onClick={async () => {
+                      const n = await rotate(k.id);
+                      toast.success(`已轮换 ${n.prefix}… 请立即复制新密钥`);
                     }}
                   >
                     Rotate

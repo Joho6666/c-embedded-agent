@@ -7,7 +7,6 @@ import { Metric } from "@/components/common/Metric";
 import { GatewayFlow } from "@/components/dashboard/GatewayFlow";
 import { useGateway } from "@/lib/stores/gateway";
 import { useUi } from "@/lib/stores/ui";
-import { overviewMetrics } from "@/lib/mock";
 import { formatCompact, formatMs, formatNumber, formatPercent, formatUsd } from "@/lib/format";
 import { ProvStatus } from "@/components/common/StatusBadge";
 import { ProviderMark } from "@/components/common/ProviderMark";
@@ -16,7 +15,7 @@ export default function OverviewPage() {
   const providers = useGateway((s) => s.providers);
   const openProv = useUi((s) => s.openAddProvider);
   const openCred = useUi((s) => s.openAddCredential);
-  const m = overviewMetrics;
+  const m = useGateway((s) => s.metrics);
 
   return (
     <div>

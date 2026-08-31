@@ -50,8 +50,8 @@ export default function CircuitPage() {
                     <td className="space-x-1 whitespace-nowrap px-2">
                       <Button
                         size="sm"
-                        onClick={() => {
-                          recover(cb.id);
+                        onClick={async () => {
+                          await recover(cb.id);
                           toast.success("已恢复，状态回到 Healthy");
                         }}
                       >

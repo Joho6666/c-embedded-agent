@@ -1,15 +1,15 @@
-import shutil
 from pathlib import Path
 
 import pytest
 
 from app.config.settings import settings
 from app.tools.compiler import compile_project
+from app.tools.detect import gcc_installed, make_installed
 from app.workspace.manager import create_project, project_root
 
 
 @pytest.mark.skipif(
-    shutil.which("arm-none-eabi-gcc") is None or shutil.which("make") is None,
+    not gcc_installed() or not make_installed(),
     reason="ARM GCC or make not installed",
 )
 def test_create_project_make(tmp_path: Path, monkeypatch):

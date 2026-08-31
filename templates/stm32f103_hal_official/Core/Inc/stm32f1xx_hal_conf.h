@@ -73,8 +73,6 @@ extern "C" {
 #define PHY_SPEED_STATUS ((uint16_t)0x0002)
 #define PHY_DUPLEX_STATUS ((uint16_t)0x0004)
 
-#define USE_FULL_ASSERT 0U
-
 #ifdef HAL_RCC_MODULE_ENABLED
 #include "stm32f1xx_hal_rcc.h"
 #endif

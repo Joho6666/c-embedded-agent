@@ -8,6 +8,7 @@ from typing import Any
 
 from app.config.settings import settings
 from app.tools.gcc_parser import parse_gcc_output
+from app.tools.toolchain import prepend_toolchain_path
 
 LineCallback = Callable[[str, str], Awaitable[None] | None]
 
@@ -17,6 +18,7 @@ class CompileError(RuntimeError):
 
 
 def compile_project(project_root: Path) -> dict[str, Any]:
+    prepend_toolchain_path()
     make = shutil.which("make")
     gcc = shutil.which("arm-none-eabi-gcc")
     if not gcc:
@@ -44,6 +46,7 @@ async def compile_project_streaming(
     project_root: Path,
     on_line: LineCallback | None = None,
 ) -> dict[str, Any]:
+    prepend_toolchain_path()
     make = shutil.which("make")
     gcc = shutil.which("arm-none-eabi-gcc")
     if not gcc:

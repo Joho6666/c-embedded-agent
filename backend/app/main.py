@@ -20,7 +20,9 @@ from app.tools.filesystem import list_files, read_file, write_file
 from app.tools.flash import FlashError, flash_elf
 from app.tools.gitutil import restore_snapshot
 from app.tools.knowledge import ingest_pdf, retrieve_knowledge
-from app.tools.serialutil import list_ports
+from app.tools.serialutil import connect as serial_connect
+from app.tools.serialutil import disconnect as serial_disconnect
+from app.tools.serialutil import list_ports, read_available, status as serial_status
 from app.workspace.manager import create_project, list_projects, project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
 
@@ -100,6 +102,29 @@ def tools() -> list[dict[str, Any]]:
 @app.get("/api/serial/ports")
 def serial_ports() -> list[dict[str, Any]]:
     return list_ports()
+
+
+@app.get("/api/serial/status")
+def serial_status_api() -> dict[str, Any]:
+    return serial_status()
+
+
+@app.post("/api/serial/connect")
+def serial_connect_api(body: SerialBody) -> dict[str, Any]:
+    try:
+        return serial_connect(body.device, body.baud)
+    except (ValueError, RuntimeError, OSError) as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/serial/disconnect")
+def serial_disconnect_api() -> dict[str, str]:
+    return serial_disconnect()
+
+
+@app.get("/api/serial/lines")
+def serial_lines() -> list[dict[str, str]]:
+    return read_available()
 
 
 @app.get("/api/projects")

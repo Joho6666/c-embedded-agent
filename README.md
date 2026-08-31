@@ -40,6 +40,13 @@ make clean && make -j4
 
 需要 `arm-none-eabi-gcc` / `objcopy` / `size` / `make`。本机没有工具链时测试会 skip，不编造成绩。
 
+后端也会自动探测用户目录便携工具链：
+
+- `%USERPROFILE%/tools/xpack-arm-none-eabi-gcc-13.3.1-1.1/bin`
+- `%USERPROFILE%/tools/xpack-windows-build-tools-4.4.1-3/bin`
+
+或设置 `CEA_TOOLCHAIN_PATH`。官方模板已在本机用 ARM GCC 13.3 真实链接出 `firmware.elf/.hex/.bin`（Flash text+data ≈ 2.9KB）。
+
 Golden 回归夹具：`examples/golden/stm32f103_led/`（`python examples/golden/sync_led.py`）。
 
 ## Agent 规则

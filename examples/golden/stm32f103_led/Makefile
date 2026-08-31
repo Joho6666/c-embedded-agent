@@ -15,7 +15,7 @@ INCLUDES = \
 
 CFLAGS = $(MCU) $(DEFS) $(INCLUDES) -Os -ffunction-sections -fdata-sections -Wall -fno-common -g
 ASFLAGS = $(MCU) -c
-LDFLAGS = $(MCU) -T STM32F103C8Tx_FLASH.ld -Wl,--gc-sections -Wl,-Map=$(TARGET).map --specs=nano.specs -lc -lm
+LDFLAGS = $(MCU) -T STM32F103C8Tx_FLASH.ld -Wl,--gc-sections -Wl,-Map=$(TARGET).map --specs=nano.specs --specs=nosys.specs -Wl,--no-warn-rwx-segments
 
 C_SOURCES = \
 	Core/Src/main.c \

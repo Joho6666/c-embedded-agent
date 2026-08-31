@@ -4,8 +4,11 @@ import shutil
 import subprocess
 from typing import Any
 
+from app.tools.toolchain import prepend_toolchain_path
+
 
 def _run_version(exe_name: str) -> str | None:
+    prepend_toolchain_path()
     if shutil.which(exe_name) is None:
         return None
     try:
@@ -24,6 +27,7 @@ def _run_version(exe_name: str) -> str | None:
 
 
 def _probe_stlink() -> dict[str, Any]:
+    prepend_toolchain_path()
     if shutil.which("st-info") is None:
         return {"id": "stlink", "name": "st-info", "installed": False, "version": None}
     try:
@@ -61,8 +65,10 @@ def tool_status() -> list[dict[str, Any]]:
 
 
 def gcc_installed() -> bool:
+    prepend_toolchain_path()
     return shutil.which("arm-none-eabi-gcc") is not None
 
 
 def make_installed() -> bool:
+    prepend_toolchain_path()
     return shutil.which("make") is not None

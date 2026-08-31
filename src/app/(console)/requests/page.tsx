@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,14 @@ export default function RequestsPage() {
   const [provider, setProvider] = useState("all");
   const [vm, setVm] = useState("all");
   const [page, setPage] = useState(0);
+  const reloadLogs = useGateway((s) => s.reloadLogs);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      void reloadLogs();
+    }, 2000);
+    return () => clearInterval(t);
+  }, [reloadLogs]);
 
   const filtered = useMemo(() => {
     return logs.filter((l) => {
@@ -90,7 +98,7 @@ export default function RequestsPage() {
                   <td>{p?.name}</td>
                   <td>{c?.name}</td>
                   <td>
-                    <RequestStatus status={l.status} />
+                    <RequestStatus status={l.status} requestStatus={l.requestStatus} />
                   </td>
                   <td className="font-mono">{formatCompact(l.inputTokens)}</td>
                   <td className="font-mono">{formatCompact(l.outputTokens)}</td>

@@ -13,6 +13,18 @@ import type {
   VirtualModel,
 } from "@/types";
 
+export interface ModelPricing {
+  id: string;
+  provider: string;
+  model: string;
+  inputPer1M: number;
+  outputPer1M: number;
+  cachedInputPer1M: number;
+  reasoningPer1M: number;
+  currency: string;
+  effectiveFrom: string;
+}
+
 export const gatewayApi = {
   listProviders: () => adminFetch<Provider[]>("/admin/providers"),
   createProvider: (input: { descriptorId: string; name?: string; baseUrl?: string }) =>
@@ -63,7 +75,20 @@ export const gatewayApi = {
   health: () => adminFetch<HealthSnapshot>("/admin/health"),
   circuits: () => adminFetch<CircuitBreaker[]>("/admin/circuit-breakers"),
   capabilities: () => adminFetch<{ strategies: string[]; adapters: Record<string, Record<string, boolean>> }>("/admin/capabilities"),
+  providerCapabilities: (id: string) =>
+    adminFetch<{ id: string; type: string; capabilities: Record<string, boolean> }>(`/admin/providers/${id}/capabilities`),
   usageTrend: (range = "today") => adminFetch<{ range: string; trend: { t: string; requests: number; tokens: number; cost: number }[] }>(`/admin/usage/trend?range=${range}`),
+  usageProviders: (range = "today") => adminFetch<Record<string, unknown>[]>(`/admin/usage/providers?range=${range}`),
+  usageModels: (range = "today") => adminFetch<Record<string, unknown>[]>(`/admin/usage/models?range=${range}`),
+  usageCredentials: (range = "today") => adminFetch<Record<string, unknown>[]>(`/admin/usage/credentials?range=${range}`),
+  usageApiKeys: (range = "today") => adminFetch<Record<string, unknown>[]>(`/admin/usage/api-keys?range=${range}`),
+  usageErrors: (range = "today") => adminFetch<{ name: string; value: number }[]>(`/admin/usage/errors?range=${range}`),
+  listPricing: () => adminFetch<ModelPricing[]>("/admin/model-pricing"),
+  createPricing: (input: Partial<ModelPricing> & { model: string }) =>
+    adminFetch<ModelPricing>("/admin/model-pricing", { method: "POST", body: JSON.stringify(input) }),
+  patchPricing: (id: string, patch: Record<string, unknown>) =>
+    adminFetch<ModelPricing>(`/admin/model-pricing/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deletePricing: (id: string) => adminFetch<{ ok: boolean }>(`/admin/model-pricing/${id}`, { method: "DELETE" }),
 
   async chatCompletions(body: Record<string, unknown>, key?: string) {
     const token = key || playgroundKey();

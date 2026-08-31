@@ -361,7 +361,7 @@ function RequestDrawer() {
         {log && (
           <div className="space-y-4 text-[12px]">
             <div className="flex items-center gap-2">
-              <RequestStatus status={log.status} />
+              <RequestStatus status={log.status} requestStatus={log.requestStatus} />
               <span className="text-muted-foreground">{formatDateTime(log.time)}</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -394,9 +394,18 @@ function RequestDrawer() {
                               : "bg-muted-foreground"
                       }`}
                     />
-                    <div className="font-mono text-[10px] text-muted-foreground">{e.at}</div>
-                    <div>{e.label}</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      {e.at}
+                      {e.durationMs != null ? ` · +${e.durationMs}ms` : ""}
+                      {e.type ? ` · ${e.type}` : ""}
+                    </div>
+                    <div>{e.message || e.label}</div>
                     {e.detail && <div className="text-[11px] text-muted-foreground">{e.detail}</div>}
+                    {(e.provider || e.model) && (
+                      <div className="text-[10px] text-muted-foreground">
+                        {[e.provider, e.model].filter(Boolean).join(" / ")}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ol>

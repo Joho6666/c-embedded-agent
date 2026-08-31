@@ -7,6 +7,8 @@ export type CredentialStatus =
   | "circuit_open"
   | "unauthorized"
   | "quota_exhausted"
+  | "quota_daily_exhausted"
+  | "quota_monthly_exhausted"
   | "disabled"
   | "error";
 

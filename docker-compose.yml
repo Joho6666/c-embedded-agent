@@ -14,8 +14,11 @@ services:
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       ALLOW_LOCAL_UPSTREAM: ${ALLOW_LOCAL_UPSTREAM:-false}
       REDIS_URL: ${REDIS_URL:-}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
     volumes:
       - gateway-data:/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 10s
@@ -39,6 +42,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
       interval: 15s
@@ -50,6 +54,12 @@ services:
     profiles: ["redis"]
     ports:
       - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
 
 volumes:
   gateway-data:

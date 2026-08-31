@@ -33,11 +33,16 @@ def client(tmp_path, monkeypatch):
     database.engine = engine
     database.SessionLocal = SessionLocal
 
+    from app.core.state import reset_state
+
+    reset_state()
+
     from app.main import app
 
     with TestClient(app) as c:
         yield c
     get_settings.cache_clear()
+    reset_state()
 
 
 @pytest.fixture()

@@ -29,10 +29,41 @@ class ChatResult:
     headers: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass
+class ProviderCapabilities:
+    chat: bool = True
+    responses: bool = True
+    native_responses: bool = False
+    streaming: bool = True
+    tools: bool = True
+    vision: bool = False
+    embeddings: bool = False
+    images: bool = False
+    audio: bool = False
+    reasoning: bool = False
+    structured_output: bool = False
+
+    def as_dict(self) -> dict[str, bool]:
+        return {
+            "chat": self.chat,
+            "responses": self.responses,
+            "nativeResponses": self.native_responses,
+            "streaming": self.streaming,
+            "tools": self.tools,
+            "vision": self.vision,
+            "embeddings": self.embeddings,
+            "images": self.images,
+            "audio": self.audio,
+            "reasoning": self.reasoning,
+            "structuredOutput": self.structured_output,
+        }
+
+
 class BaseProviderAdapter(ABC):
     name: str = "base"
     supports_chat: bool = True
     supports_responses: bool = True
+    supports_native_responses: bool = False
     supports_streaming: bool = True
     supports_tools: bool = True
     supports_vision: bool = False
@@ -40,6 +71,22 @@ class BaseProviderAdapter(ABC):
     supports_images: bool = False
     supports_audio: bool = False
     supports_reasoning: bool = False
+    supports_structured_output: bool = False
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            chat=self.supports_chat,
+            responses=self.supports_responses,
+            native_responses=self.supports_native_responses,
+            streaming=self.supports_streaming,
+            tools=self.supports_tools,
+            vision=self.supports_vision,
+            embeddings=self.supports_embeddings,
+            images=self.supports_images,
+            audio=self.supports_audio,
+            reasoning=self.supports_reasoning,
+            structured_output=self.supports_structured_output,
+        )
 
     @abstractmethod
     async def list_models(self, ctx: AdapterContext) -> list[str]:
@@ -57,9 +104,17 @@ class BaseProviderAdapter(ABC):
     async def stream_chat_completion(self, ctx: AdapterContext, body: dict[str, Any]) -> AsyncIterator[bytes]:
         ...
 
-    @abstractmethod
     async def responses(self, ctx: AdapterContext, body: dict[str, Any]) -> ChatResult:
-        ...
+        from app.providers.transform import chat_body_from_responses, responses_from_chat
+
+        result = await self.chat_completion(ctx, chat_body_from_responses(body))
+        return responses_from_chat(result)
+
+    async def stream_responses(self, ctx: AdapterContext, body: dict[str, Any]) -> AsyncIterator[bytes]:
+        from app.providers.transform import chat_body_from_responses
+
+        async for chunk in self.stream_chat_completion(ctx, chat_body_from_responses(body)):
+            yield chunk
 
     def normalize_request(self, body: dict[str, Any]) -> dict[str, Any]:
         return dict(body)

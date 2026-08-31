@@ -1,36 +1,26 @@
 from __future__ import annotations
 
-import threading
-import time
-from collections import defaultdict, deque
-
-_lock = threading.Lock()
-_hits: dict[str, deque[float]] = defaultdict(deque)
+from app.core.state import get_state
 
 
-def _prune(q: deque[float], window: float, now: float) -> None:
-    while q and now - q[0] > window:
-        q.popleft()
+def allow(key: str, limit: int, window_s: float = 60.0, amount: int = 1) -> bool:
+    return get_state().sliding_window_allow(key, limit, window_s, amount)
 
 
-def allow(key: str, limit: int, window_s: float = 60.0) -> bool:
-    if limit <= 0:
-        return True
-    now = time.monotonic()
-    with _lock:
-        q = _hits[key]
-        _prune(q, window_s, now)
-        if len(q) >= limit:
-            return False
-        q.append(now)
-        return True
+def peek(key: str, limit: int, window_s: float = 60.0, amount: int = 1) -> bool:
+    return get_state().sliding_window_peek(key, limit, window_s, amount)
+
+
+def add(key: str, amount: int = 1, window_s: float = 60.0) -> None:
+    get_state().sliding_window_add(key, amount, window_s)
 
 
 def remaining(key: str, limit: int, window_s: float = 60.0) -> int:
     if limit <= 0:
         return 10**9
-    now = time.monotonic()
-    with _lock:
-        q = _hits[key]
-        _prune(q, window_s, now)
-        return max(0, limit - len(q))
+    used = get_state().sliding_window_used(key, window_s)
+    return max(0, limit - used)
+
+
+def used(key: str, window_s: float = 60.0) -> int:
+    return get_state().sliding_window_used(key, window_s)

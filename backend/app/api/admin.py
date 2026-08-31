@@ -9,20 +9,23 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import admin_auth, get_db
-from app.api.serializers import credential_out, key_out, log_out, model_out, provider_out, virtual_out
+from app.api.serializers import credential_out, key_out, log_out, model_out, pricing_out, provider_out, virtual_out
 from app.core.ids import new_id
 from app.core.security import encrypt_secret, generate_gateway_key, hash_api_key
+from app.core.ssrf import validate_upstream_url
+from app.core.state import state_status
 from app.gateway.engine import ctx_for, maybe_recover_circuit
 from app.models.database import (
     ApiKeyRow,
     CredentialRow,
+    ModelPricingRow,
     ModelRow,
     ProviderRow,
     RequestLogRow,
     VirtualModelRow,
     utcnow,
 )
-from app.providers.registry import get_adapter
+from app.providers.registry import adapter_capabilities, get_adapter
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(admin_auth)])
 
@@ -78,8 +81,20 @@ class KeyIn(BaseModel):
     rpmLimit: int = 120
     tpmLimit: int = 400000
     dailyTokenLimit: int = 10000000
+    dailyRequestLimit: int = 10000
     monthlyBudget: float = 40
     ipWhitelist: list[str] = Field(default_factory=list)
+
+
+class PricingIn(BaseModel):
+    provider: str = ""
+    model: str
+    inputPer1M: float = 0
+    outputPer1M: float = 0
+    cachedInputPer1M: float = 0
+    reasoningPer1M: float = 0
+    currency: str = "USD"
+    effectiveFrom: str = ""
 
 
 def _agg_provider(db: Session, pid: str) -> tuple[int, int, float, float]:
@@ -121,16 +136,25 @@ def create_provider(body: ProviderIn, db: Session = Depends(get_db)):
     pid = desc if desc != "custom-openai" else new_id("prov")
     if db.get(ProviderRow, pid):
         pid = new_id("prov")
+    base_url = body.baseUrl or base
+    if base_url:
+        try:
+            validate_upstream_url(base_url, ptype)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    adapter = get_adapter(ptype)
+    caps = adapter.capabilities().as_dict() if hasattr(adapter, "capabilities") else {}
+    enabled_caps = [k for k, v in caps.items() if v]
     row = ProviderRow(
         id=pid,
         name=body.name or name,
         type=ptype,
         descriptor_id=desc,
-        base_url=body.baseUrl or base,
+        base_url=base_url,
         family=family,
         color=color,
         mark=mark,
-        capabilities=json.dumps(["chat", "streaming", "responses"]),
+        capabilities=json.dumps(enabled_caps or ["chat", "streaming", "responses"]),
     )
     db.add(row)
     db.flush()
@@ -362,6 +386,7 @@ def create_key(body: KeyIn, db: Session = Depends(get_db)):
         rpm_limit=body.rpmLimit,
         tpm_limit=body.tpmLimit,
         daily_token_limit=body.dailyTokenLimit,
+        daily_request_limit=body.dailyRequestLimit,
         monthly_budget=body.monthlyBudget,
     )
     db.add(row)
@@ -452,9 +477,56 @@ def usage_trend(range: str = "today", db: Session = Depends(get_db)):
 @router.get("/capabilities")
 def capabilities():
     from app.gateway.engine import IMPLEMENTED_STRATEGIES
-    from app.providers.registry import adapter_capabilities
 
     return {"strategies": IMPLEMENTED_STRATEGIES, "adapters": adapter_capabilities()}
+
+
+@router.get("/providers/{pid}/capabilities")
+def provider_capabilities(pid: str, db: Session = Depends(get_db)):
+    p = db.get(ProviderRow, pid)
+    if not p:
+        raise HTTPException(404, "provider not found")
+    adapter = get_adapter(p.type)
+    return {"id": pid, "type": p.type, "capabilities": adapter.capabilities().as_dict()}
+
+
+def _range_since(range: str, custom_from: str | None = None, custom_to: str | None = None):
+    if range == "custom" and custom_from:
+        start = datetime.fromisoformat(custom_from.replace("Z", ""))
+        end = datetime.fromisoformat(custom_to.replace("Z", "")) if custom_to else datetime.utcnow()
+        return start, end
+    hours = {"today": 24, "24h": 24, "7d": 24 * 7, "30d": 24 * 30}.get(range, 24)
+    return datetime.utcnow() - timedelta(hours=hours), datetime.utcnow()
+
+
+def _usage_rows(db: Session, range: str, custom_from: str | None = None, custom_to: str | None = None):
+    start, end = _range_since(range, custom_from, custom_to)
+    return db.query(RequestLogRow).filter(RequestLogRow.timestamp >= start, RequestLogRow.timestamp <= end).all()
+
+
+def _usage_metrics(rows: list[RequestLogRow]) -> dict:
+    total = len(rows)
+    ok = sum(1 for r in rows if r.http_status == 200)
+    errors_429 = sum(1 for r in rows if r.http_status == 429)
+    errors_5xx = sum(1 for r in rows if r.http_status >= 500)
+    timeouts = sum(1 for r in rows if r.http_status == 504)
+    fallbacks = sum(1 for r in rows if r.fallback_count)
+    return {
+        "requests": total,
+        "inputTokens": sum(r.input_tokens for r in rows),
+        "outputTokens": sum(r.output_tokens for r in rows),
+        "cachedTokens": sum(r.cached_tokens for r in rows),
+        "reasoningTokens": sum(r.reasoning_tokens for r in rows),
+        "tokens": sum(r.total_tokens for r in rows),
+        "cost": round(sum(r.estimated_cost for r in rows), 6),
+        "successRate": round((ok / total * 100) if total else 100, 2),
+        "ttft": int(sum(r.ttft_ms for r in rows) / total) if total else 0,
+        "latency": int(sum(r.latency_ms for r in rows) / total) if total else 0,
+        "count429": errors_429,
+        "count5xx": errors_5xx,
+        "timeout": timeouts,
+        "fallbackRate": round((fallbacks / total * 100) if total else 0, 2),
+    }
 
 
 @router.get("/health")
@@ -468,7 +540,7 @@ def admin_health(db: Session = Depends(get_db)):
     providers = []
     for p in db.query(ProviderRow).all():
         pc = [c for c in creds if c.provider_id == p.id]
-        healthy = all(c.status in {"healthy", "rate_limited"} for c in pc) if pc else True
+        healthy = all(c.status in {"healthy", "rate_limited", "cooling"} for c in pc) if pc else True
         providers.append(
             {
                 "providerId": p.id,
@@ -477,13 +549,37 @@ def admin_health(db: Session = Depends(get_db)):
                 "successRate": 100,
             }
         )
-    overall = "operational" if counts.get("circuit_open", 0) == 0 else "degraded"
+    st = state_status()
+    redis_status = st.get("redis") or "disabled"
+    redis_comp = "operational" if redis_status == "connected" else ("down" if redis_status == "error" else "degraded")
+    if redis_status == "disabled":
+        redis_comp = "degraded"
+    overall = "operational" if counts.get("circuit_open", 0) == 0 and redis_status != "error" else "degraded"
+    db_kind = "SQLite"
+    from app.core.config import get_settings
+
+    if "postgres" in get_settings().database_url:
+        db_kind = "PostgreSQL"
     return {
         "overall": overall,
         "checkedAt": utcnow().isoformat() + "Z",
+        "stateBackend": st.get("mode"),
+        "redis": redis_status,
         "components": [
             {"id": "gateway", "name": "Gateway", "status": "operational", "detail": "FastAPI"},
-            {"id": "database", "name": "Database", "status": "operational", "detail": "SQLite"},
+            {"id": "database", "name": "Database", "status": "operational", "detail": db_kind},
+            {
+                "id": "redis",
+                "name": "Redis",
+                "status": redis_comp if redis_status != "disabled" else "degraded",
+                "detail": f"{redis_status}" + (f" · {st.get('error')}" if st.get("error") else ""),
+            },
+            {
+                "id": "state",
+                "name": "State Backend",
+                "status": "operational" if st.get("mode") == "redis" else "degraded",
+                "detail": st.get("mode", "memory"),
+            },
             {"id": "providers", "name": "Providers", "status": overall, "detail": f"{len(providers)} providers"},
             {"id": "credentials", "name": "Credentials", "status": overall, "detail": f"{len(creds)} credentials"},
         ],
@@ -515,3 +611,114 @@ def circuits(db: Session = Depends(get_db)):
             }
         )
     return out
+
+
+@router.get("/model-pricing")
+def list_pricing(db: Session = Depends(get_db)):
+    return [pricing_out(r) for r in db.query(ModelPricingRow).all()]
+
+
+@router.post("/model-pricing")
+def create_pricing(body: PricingIn, db: Session = Depends(get_db)):
+    row = ModelPricingRow(
+        id=new_id("price"),
+        provider=body.provider,
+        model=body.model,
+        input_per_1m=body.inputPer1M,
+        output_per_1m=body.outputPer1M,
+        cached_input_per_1m=body.cachedInputPer1M,
+        reasoning_per_1m=body.reasoningPer1M,
+        currency=body.currency,
+        effective_from=body.effectiveFrom,
+    )
+    db.add(row)
+    db.flush()
+    return pricing_out(row)
+
+
+@router.patch("/model-pricing/{pid}")
+def patch_pricing(pid: str, body: dict, db: Session = Depends(get_db)):
+    row = db.get(ModelPricingRow, pid)
+    if not row:
+        raise HTTPException(404, "not found")
+    mapping = {
+        "provider": "provider",
+        "model": "model",
+        "inputPer1M": "input_per_1m",
+        "outputPer1M": "output_per_1m",
+        "cachedInputPer1M": "cached_input_per_1m",
+        "reasoningPer1M": "reasoning_per_1m",
+        "currency": "currency",
+        "effectiveFrom": "effective_from",
+    }
+    for src, dest in mapping.items():
+        if src in body:
+            setattr(row, dest, body[src])
+    db.flush()
+    return pricing_out(row)
+
+
+@router.delete("/model-pricing/{pid}")
+def delete_pricing(pid: str, db: Session = Depends(get_db)):
+    row = db.get(ModelPricingRow, pid)
+    if not row:
+        raise HTTPException(404, "not found")
+    db.delete(row)
+    return {"ok": True}
+
+
+@router.get("/usage/providers")
+def usage_providers(range: str = "today", custom_from: str | None = None, custom_to: str | None = None, db: Session = Depends(get_db)):
+    rows = _usage_rows(db, range, custom_from, custom_to)
+    grouped: dict[str, list[RequestLogRow]] = {}
+    for r in rows:
+        grouped.setdefault(r.provider_id or "unknown", []).append(r)
+    names = {p.id: p.name for p in db.query(ProviderRow).all()}
+    return [{"id": k, "name": names.get(k, k), **_usage_metrics(v)} for k, v in grouped.items()]
+
+
+@router.get("/usage/models")
+def usage_models(range: str = "today", custom_from: str | None = None, custom_to: str | None = None, db: Session = Depends(get_db)):
+    rows = _usage_rows(db, range, custom_from, custom_to)
+    grouped: dict[str, list[RequestLogRow]] = {}
+    for r in rows:
+        grouped.setdefault(r.real_model or r.requested_model or "unknown", []).append(r)
+    return [{"id": k, "name": k, **_usage_metrics(v)} for k, v in grouped.items()]
+
+
+@router.get("/usage/credentials")
+def usage_credentials(range: str = "today", custom_from: str | None = None, custom_to: str | None = None, db: Session = Depends(get_db)):
+    rows = _usage_rows(db, range, custom_from, custom_to)
+    grouped: dict[str, list[RequestLogRow]] = {}
+    for r in rows:
+        grouped.setdefault(r.credential_id or "unknown", []).append(r)
+    names = {c.id: c.name for c in db.query(CredentialRow).all()}
+    return [{"id": k, "name": names.get(k, k), **_usage_metrics(v)} for k, v in grouped.items()]
+
+
+@router.get("/usage/api-keys")
+def usage_api_keys(range: str = "today", custom_from: str | None = None, custom_to: str | None = None, db: Session = Depends(get_db)):
+    rows = _usage_rows(db, range, custom_from, custom_to)
+    grouped: dict[str, list[RequestLogRow]] = {}
+    for r in rows:
+        grouped.setdefault(r.gateway_api_key_id or "unknown", []).append(r)
+    names = {k.id: k.name for k in db.query(ApiKeyRow).all()}
+    return [{"id": k, "name": names.get(k, k), **_usage_metrics(v)} for k, v in grouped.items()]
+
+
+@router.get("/usage/errors")
+def usage_errors(range: str = "today", custom_from: str | None = None, custom_to: str | None = None, db: Session = Depends(get_db)):
+    rows = _usage_rows(db, range, custom_from, custom_to)
+    buckets = {"429": 0, "5xx": 0, "timeout": 0, "cancelled": 0, "other": 0}
+    for r in rows:
+        if r.request_status == "cancelled":
+            buckets["cancelled"] += 1
+        elif r.http_status == 429:
+            buckets["429"] += 1
+        elif r.http_status == 504:
+            buckets["timeout"] += 1
+        elif r.http_status >= 500:
+            buckets["5xx"] += 1
+        elif r.http_status and r.http_status != 200:
+            buckets["other"] += 1
+    return [{"name": k, "value": v} for k, v in buckets.items()]

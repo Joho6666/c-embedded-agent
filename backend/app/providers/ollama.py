@@ -11,6 +11,9 @@ from app.providers.openai_compatible import OpenAICompatibleAdapter
 
 class OllamaAdapter(OpenAICompatibleAdapter):
     name = "ollama"
+    supports_native_responses = False
+    supports_embeddings = True
+    supports_vision = True
 
     def _root(self, ctx: AdapterContext) -> str:
         return (ctx.base_url or "http://localhost:11434").rstrip("/")

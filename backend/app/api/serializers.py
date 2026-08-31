@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+from app.core.limiter import used as window_used
 from app.core.security import decrypt_secret, mask_secret
-from app.models.database import ApiKeyRow, CredentialRow, ModelRow, ProviderRow, RequestLogRow, VirtualModelRow
+from app.models.database import ApiKeyRow, CredentialRow, ModelPricingRow, ModelRow, ProviderRow, RequestLogRow, VirtualModelRow
 
 
 def iso(v: datetime | None) -> str | None:
@@ -65,15 +66,15 @@ def credential_out(c: CredentialRow) -> dict:
         "coolingUntil": iso(c.cooling_until),
         "quota": {
             "rpmLimit": c.rpm_limit,
-            "rpmUsed": 0,
+            "rpmUsed": window_used(f"cred-rpm:{c.id}"),
             "tpmLimit": c.tpm_limit,
-            "tpmUsed": 0,
+            "tpmUsed": window_used(f"cred-tpm:{c.id}"),
             "dailyRequestLimit": c.daily_request_limit,
             "dailyRequestUsed": c.requests_today,
             "dailyTokenLimit": c.daily_token_limit,
             "dailyTokenUsed": c.tokens_today,
             "monthlyBudget": c.monthly_budget,
-            "monthlySpend": 0,
+            "monthlySpend": c.monthly_spend,
         },
         "errorHistory": [],
         "enabled": c.enabled,
@@ -124,19 +125,25 @@ def key_out(k: ApiKeyRow, secret: str | None = None) -> dict:
         "rpmLimit": k.rpm_limit,
         "tpmLimit": k.tpm_limit,
         "dailyTokenLimit": k.daily_token_limit,
+        "dailyRequestLimit": getattr(k, "daily_request_limit", 0) or 0,
         "monthlyBudget": k.monthly_budget,
+        "monthlySpend": getattr(k, "monthly_spend", 0) or 0,
         "ipWhitelist": [],
         "lastUsed": iso(k.last_used_at),
         "requestsToday": k.requests_today,
         "tokensToday": k.tokens_today,
-        "costToday": 0,
+        "costToday": getattr(k, "monthly_spend", 0) or 0,
     }
 
 
 def log_out(r: RequestLogRow) -> dict:
     status: int | str = r.http_status
-    if r.http_status == 504:
+    if r.request_status in {"pending", "routing", "connecting", "streaming", "cancelled"}:
+        status = r.request_status
+    elif r.http_status == 504:
         status = "timeout"
+    elif r.request_status == "error" and r.http_status == 0:
+        status = "error"
     return {
         "id": r.id,
         "callId": r.id,
@@ -147,9 +154,16 @@ def log_out(r: RequestLogRow) -> dict:
         "providerId": r.provider_id,
         "credentialId": r.credential_id,
         "status": status,
+        "requestStatus": r.request_status,
+        "startedAt": iso(r.started_at),
+        "firstTokenAt": iso(r.first_token_at),
+        "completedAt": iso(r.completed_at),
+        "streamCompleted": r.stream_completed,
+        "clientDisconnected": getattr(r, "client_disconnected", False),
         "inputTokens": r.input_tokens,
         "outputTokens": r.output_tokens,
-        "cachedTokens": 0,
+        "cachedTokens": r.cached_tokens,
+        "reasoningTokens": r.reasoning_tokens,
         "ttftMs": r.ttft_ms,
         "latencyMs": r.latency_ms,
         "retries": r.retry_count,
@@ -158,4 +172,18 @@ def log_out(r: RequestLogRow) -> dict:
         "stream": r.stream,
         "error": r.error_message or None,
         "trace": json.loads(r.trace_json or "[]"),
+    }
+
+
+def pricing_out(row: ModelPricingRow) -> dict:
+    return {
+        "id": row.id,
+        "provider": row.provider,
+        "model": row.model,
+        "inputPer1M": row.input_per_1m,
+        "outputPer1M": row.output_per_1m,
+        "cachedInputPer1M": row.cached_input_per_1m,
+        "reasoningPer1M": getattr(row, "reasoning_per_1m", 0) or 0,
+        "currency": row.currency,
+        "effectiveFrom": getattr(row, "effective_from", "") or "",
     }

@@ -17,6 +17,10 @@ def _join(base: str, path: str) -> str:
 
 class OpenAICompatibleAdapter(BaseProviderAdapter):
     name = "openai_compatible"
+    supports_native_responses = True
+    supports_vision = True
+    supports_embeddings = True
+    supports_structured_output = True
 
     def _headers(self, ctx: AdapterContext) -> dict[str, str]:
         headers = {"Content-Type": "application/json", **ctx.headers}
@@ -77,13 +81,43 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
 
     async def responses(self, ctx: AdapterContext, body: dict[str, Any]) -> ChatResult:
         url = _join(ctx.base_url, "/responses")
-        async with httpx.AsyncClient(timeout=ctx.timeout_s) as client:
-            r = await client.post(url, headers=self._headers(ctx), json=body)
-        if r.status_code == 404:
+        try:
+            async with httpx.AsyncClient(timeout=ctx.timeout_s) as client:
+                r = await client.post(url, headers=self._headers(ctx), json=body)
+        except Exception:  # noqa: BLE001
+            return await self._responses_via_chat(ctx, body)
+        if r.status_code in (404, 405) or (r.status_code >= 400 and "not found" in r.text.lower()):
             return await self._responses_via_chat(ctx, body)
         if r.status_code >= 400:
             raise UpstreamError(r.status_code, r.text[:800], retryable_status(r.status_code))
         return ChatResult(status_code=r.status_code, payload=r.json())
+
+    async def stream_responses(self, ctx: AdapterContext, body: dict[str, Any]) -> AsyncIterator[bytes]:
+        payload = dict(body)
+        payload["stream"] = True
+        url = _join(ctx.base_url, "/responses")
+        headers = self._headers(ctx)
+        headers["Accept"] = "text/event-stream"
+        try:
+            async with httpx.AsyncClient(timeout=ctx.timeout_s) as client:
+                async with client.stream("POST", url, headers=headers, json=payload) as r:
+                    if r.status_code in (404, 405):
+                        async for chunk in self.stream_chat_completion(ctx, chat_body_from_responses(body)):
+                            yield chunk
+                        return
+                    if r.status_code >= 400:
+                        text = (await r.aread()).decode("utf-8", errors="replace")[:800]
+                        raise UpstreamError(r.status_code, text, retryable_status(r.status_code))
+                    async for chunk in r.aiter_bytes():
+                        if chunk:
+                            yield chunk
+                    return
+        except UpstreamError:
+            raise
+        except Exception:  # noqa: BLE001
+            async for chunk in self.stream_chat_completion(ctx, chat_body_from_responses(body)):
+                yield chunk
+            return
 
     async def _responses_via_chat(self, ctx: AdapterContext, body: dict[str, Any]) -> ChatResult:
         result = await self.chat_completion(ctx, chat_body_from_responses(body))

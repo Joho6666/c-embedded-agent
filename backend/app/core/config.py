@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     circuit_cooldown_s: int = 60
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     allow_local_upstream: bool = False
+    app_env: str = "development"
+    require_admin_login: bool = False
+    log_retention_days: int = 30
 
 
 @lru_cache

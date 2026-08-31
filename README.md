@@ -11,7 +11,7 @@ API_KEY=sk-gw-xxxx
 
 - OpenAI-compatible `GET /v1/models`, `POST /v1/chat/completions` (SSE), `POST /v1/responses`
 - Virtual models, credential pool, failover (429 / 5xx / timeout)
-- Circuit breaker, RPM / daily token limits, daily counter reset
+- Circuit breaker; API Key and Credential RPM/TPM/daily/monthly quotas with auto recovery
 - Routing strategies from backend: priority, failover, round_robin, weighted_round_robin, least_latency, highest_success, quota_aware, health_aware, random, hybrid
 - Request logs and Usage from RequestLog (cost is 0 until model pricing is set)
 - Control plane BFF `/api/control/*` — admin secret is not shipped to the browser
@@ -22,12 +22,11 @@ API_KEY=sk-gw-xxxx
 
 - CLIProxy / EasyCLIProxy official OAuth bridge (`:8317`). Management API varies by version; if login URL is unavailable, use the EasyCLIProxy tray. No cookie scraping.
 - `ALLOW_LOCAL_UPSTREAM=true` for local mock/Ollama/CLIProxy loopback URLs on OpenAI-compatible adapters
-- Optional Redis (`docker compose --profile redis`) — limiter still works in-process without Redis
+- Optional Redis (`docker compose --profile redis up -d`) — State Backend becomes Redis when reachable; otherwise Memory
 
 ## Planned
 
-- OIDC / GitHub / Google login
-- Native Redis-backed limiter (URL is reserved)
+- OIDC / GitHub / Google login (production login is env + cookie today)
 - `least_load` / live `lowest_cost` (hidden until implemented)
 - Embeddings / images / audio data plane
 
@@ -67,7 +66,13 @@ set CREDENTIAL_ENCRYPTION_KEY=...
 docker compose up -d --build
 ```
 
-Redis: `docker compose --profile redis up -d`
+Redis: `docker compose --profile redis up -d --build`
+
+Health page should show `State Backend = Redis` when the redis profile is running.
+
+Backup: `python backend/scripts/backup.py` writes `gateway-backup-YYYYMMDD.zip`. Restore SQLite by stopping the backend and replacing `/data/gateway.db`. Encrypted credentials are not exported in plaintext.
+
+Log cleanup: `python -m app.tasks.cleanup_logs` (also runs periodically on startup).
 
 ## Security notes
 

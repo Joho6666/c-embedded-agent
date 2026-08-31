@@ -9,10 +9,24 @@ export type RequestStatusCode =
   | "timeout"
   | "quota_exhausted"
   | "circuit_open"
-  | "disabled";
+  | "disabled"
+  | "pending"
+  | "routing"
+  | "connecting"
+  | "streaming"
+  | "ok"
+  | "error"
+  | "cancelled";
 
 export interface TraceEvent {
   at: string;
+  timestamp?: string;
+  durationMs?: number;
+  type?: string;
+  provider?: string;
+  credential?: string;
+  model?: string;
+  message?: string;
   label: string;
   detail?: string;
   kind?: "info" | "ok" | "warn" | "error";
@@ -28,9 +42,16 @@ export interface RequestLog {
   providerId: string;
   credentialId: string;
   status: RequestStatusCode;
+  requestStatus?: string;
+  startedAt?: string | null;
+  firstTokenAt?: string | null;
+  completedAt?: string | null;
+  streamCompleted?: boolean;
+  clientDisconnected?: boolean;
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
+  reasoningTokens?: number;
   ttftMs: number;
   latencyMs: number;
   retries: number;

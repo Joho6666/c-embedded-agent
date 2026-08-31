@@ -13,6 +13,9 @@ class GeminiAdapter(BaseProviderAdapter):
     """Google Generative Language API, OpenAI-shaped on the Gateway side."""
 
     name = "gemini"
+    supports_native_responses = False
+    supports_vision = True
+    supports_reasoning = True
 
     def _key(self, ctx: AdapterContext) -> str:
         return ctx.api_key or ctx.headers.get("x-goog-api-key", "")

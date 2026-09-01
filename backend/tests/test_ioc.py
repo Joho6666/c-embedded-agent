@@ -3,6 +3,10 @@ from pathlib import Path
 from app.tools.ioc import parse_ioc
 
 
+def test_ioc_parser() -> None:
+    test_bluepill_ioc_parses_clock_and_pins()
+
+
 def test_bluepill_ioc_parses_clock_and_pins() -> None:
     root = Path(__file__).resolve().parents[2]
     text = (root / "templates" / "bluepill.ioc").read_text(encoding="utf-8")

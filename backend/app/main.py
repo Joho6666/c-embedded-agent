@@ -27,6 +27,9 @@ from app.tools.serialutil import connect as serial_connect
 from app.tools.serialutil import disconnect as serial_disconnect
 from app.tools.serialutil import list_ports, read_available, status as serial_status
 from app.tools.skills import benchmark_wrap, get_skill, list_skills
+from app.tools.hw_session import load_session, save_session
+from app.tools.project_scan import import_existing_project, scan_existing_project
+from app.validation import validate_project
 from app.workspace.manager import create_project, list_projects, project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
 
@@ -90,11 +93,53 @@ class HardwareRunBody(BaseModel):
     serialDevice: str | None = None
     baud: int = 115200
     expect: str | None = None
+    task: str = ""
+
+
+class ImportExistingBody(BaseModel):
+    path: str
+    name: str | None = None
+
+
+class HardwareSessionBody(BaseModel):
+    projectId: str
+    debugger: str | None = None
+    serialDevice: str | None = None
+    baud: int | None = None
+    board: str | None = None
+    mcu: str | None = None
+
+
+def _version_payload() -> dict[str, Any]:
+    root = settings.repo_root
+    app_ver = "0.8.0-beta"
+    vf = root / "VERSION"
+    if vf.is_file():
+        app_ver = vf.read_text(encoding="utf-8").strip() or app_ver
+    cube = None
+    lock = root / "vendor.lock.json"
+    if lock.is_file():
+        try:
+            cube = json.loads(lock.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cube = None
+    return {
+        "appVersion": app_ver,
+        "agentRuntimeVersion": "0.8.0-beta",
+        "templateVersion": "stm32f103_hal_official",
+        "stm32cubef1Version": (cube or {}).get("STM32CubeF1") or (cube or {}).get("hal") or "STM32CubeF1 in-tree",
+        "vendor": cube,
+    }
 
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "gcc": "installed" if gcc_installed() else "missing"}
+
+
+@app.get("/api/version")
+def version() -> dict[str, Any]:
+    return _version_payload()
 
 
 @app.get("/api/metrics")
@@ -177,7 +222,7 @@ def hardware_run(body: HardwareRunBody) -> dict[str, Any]:
         root = project_root(body.projectId)
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    return run_pipeline(root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect)
+    return run_pipeline(root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect, task=body.task)
 
 
 @app.post("/api/hardware/auto-debug")
@@ -190,8 +235,52 @@ def hardware_auto_debug(body: HardwareRunBody) -> dict[str, Any]:
 
 
 @app.get("/api/validation")
-def validation_get() -> dict[str, Any]:
-    raise HTTPException(404, "Backend Not Implemented")
+def validation_get(projectId: str = "", prompt: str = "") -> dict[str, Any]:
+    if not projectId:
+        return {"available": True, "reason": "pass projectId", "passed": False, "score": 0, "checks": {}, "missing": []}
+    try:
+        root = project_root(projectId)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    return validate_project(root, prompt)
+
+
+@app.post("/api/projects/scan-existing")
+def scan_existing(body: ImportExistingBody) -> dict[str, Any]:
+    return scan_existing_project(Path(body.path))
+
+
+@app.post("/api/projects/import-existing")
+def import_existing(body: ImportExistingBody) -> dict[str, Any]:
+    src = Path(body.path)
+    if not src.is_dir():
+        raise HTTPException(400, "path is not a directory")
+    return import_existing_project(src, body.name)
+
+
+@app.get("/api/projects/{project_id}/hardware-session")
+def hardware_session_get(project_id: str) -> dict[str, Any]:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    return load_session(root)
+
+
+@app.post("/api/projects/{project_id}/hardware-session")
+def hardware_session_set(project_id: str, body: HardwareSessionBody) -> dict[str, Any]:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    return save_session(
+        root,
+        debugger=body.debugger,
+        serialDevice=body.serialDevice,
+        baud=body.baud,
+        board=body.board,
+        mcu=body.mcu,
+    )
 
 
 @app.get("/api/knowledge")
@@ -394,7 +483,7 @@ async def approve(run_id: str, body: ApproveBody | None = None) -> dict[str, str
     if not run:
         raise HTTPException(404, "run not found")
     decision = (body.decision if body else "approved") or "approved"
-    resolve_approval(run, decision)
+    resolve_approval(run, decision, body.approvalId if body else None)
     return {"ok": "1", "decision": run.approval_decision}
 
 

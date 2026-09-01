@@ -21,11 +21,14 @@ from app.tools.gitutil import snapshot
 from app.tools.knowledge import format_citation, retrieve_knowledge
 from app.tools.patch import PatchError, apply_patch, preview_patch
 from app.tools.search import search_code
-from app.tools.error_memory import apply_known_fix, list_errors, mark_fix_result, record_from_output
+from app.tools.error_memory import apply_known_fix, list_errors, mark_fix_result, record_from_output, match_known_errors
 from app.tools.flash import FlashError, flash_elf
 from app.tools.hardware_run import run_pipeline, sample_serial
 from app.tools.skills import get_skill, skill_summary
+from app.tools.hal_modules import register_hal_module
+from app.tools.periph_gen import configure_peripheral
 from app.tools.validate import inspect_usart, validate_led_task
+from app.validation import validate_project
 from app.workspace.manager import project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
 from app.agent.context import led_from_ioc, load_ioc_analysis
@@ -62,7 +65,14 @@ TOOLS = [
     {"type": "function", "function": {"name": "run_on_device", "description": "Build→Flash→Serial→Validate。无板/无串口标 unavailable。", "parameters": {"type": "object", "properties": {"device": {"type": "string"}, "baud": {"type": "integer"}, "expect": {"type": "string"}}}}},
     {"type": "function", "function": {"name": "load_skill", "description": "加载外设 Skill 摘要（USART/DMA/TIM…）", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
     {"type": "function", "function": {"name": "search_error_memory", "description": "搜索已知编译/链接错误修复", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "tag": {"type": "string"}}, "required": ["query"]}}},
-    {"type": "function", "function": {"name": "apply_error_memory_fix", "description": "仅应用已知机械修复（Makefile HAL UART/TIM source）。", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
+    {"type": "function", "function": {"name": "apply_error_memory_fix", "description": "仅应用已知机械修复（Makefile HAL source / IRQ stub）。未知错误不要调用。", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
+    {"type": "function", "function": {"name": "register_hal_module", "description": "安全登记 HAL 模块到 Makefile + stm32f1xx_hal_conf.h，去重。不要手改 Makefile。", "parameters": {"type": "object", "properties": {"module": {"type": "string"}}, "required": ["module"]}}},
+    {"type": "function", "function": {"name": "configure_usart", "description": "按 Golden Recipe 生成 USART 初始化（Core/Src/usart.c）。LLM 只写业务逻辑。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}, "baud": {"type": "integer"}, "mode": {"type": "string"}}, "required": ["instance"]}}},
+    {"type": "function", "function": {"name": "configure_adc", "description": "按 Golden Recipe 生成 ADC 初始化。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}, "channel": {"type": "integer"}, "mode": {"type": "string"}}}}},
+    {"type": "function", "function": {"name": "configure_pwm", "description": "按 Golden Recipe 生成 TIM PWM 初始化。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}, "channel": {"type": "integer"}}}}},
+    {"type": "function", "function": {"name": "configure_i2c", "description": "按 Golden Recipe 生成 I2C 初始化。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}}}}},
+    {"type": "function", "function": {"name": "configure_spi", "description": "按 Golden Recipe 生成 SPI 初始化。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}}}}},
+    {"type": "function", "function": {"name": "configure_exti", "description": "按 Golden Recipe 生成 EXTI GPIO 中断初始化。", "parameters": {"type": "object", "properties": {"pin": {"type": "string"}, "edge": {"type": "string"}}}}},
 ]
 
 
@@ -88,10 +98,15 @@ class AgentRun:
         self.advanced = mode == "advanced"
         self.approval_event = asyncio.Event()
         self.approval_decision = "approved"
+        self.always_approve = False
+        self.pending_approval_id: str | None = None
         self.serial_device: str | None = None
         self.serial_baud = 115200
         self.expect: str | None = None
         self.loaded_skills: list[dict[str, Any]] = []
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.latency_ms = 0
 
     def cancelled(self) -> bool:
         return self.cancel_event.is_set() or self.status == "cancelled"
@@ -142,10 +157,17 @@ async def request_stop(run: AgentRun) -> None:
     finish_run(run.id, "cancelled", run.iteration)
 
 
-def resolve_approval(run: AgentRun, decision: str) -> None:
-    run.approval_decision = decision if decision in {"approved", "rejected", "once", "always"} else "rejected"
-    if run.approval_decision in {"once", "always"}:
+def resolve_approval(run: AgentRun, decision: str, approval_id: str | None = None) -> None:
+    if approval_id and run.pending_approval_id and approval_id != run.pending_approval_id:
+        return
+    raw = decision if decision in {"approved", "rejected", "once", "always"} else "rejected"
+    if raw == "always":
+        run.always_approve = True
         run.approval_decision = "approved"
+    elif raw == "once":
+        run.approval_decision = "approved"
+    else:
+        run.approval_decision = raw
     run.approval_event.set()
 
 
@@ -191,16 +213,41 @@ def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun) -> st
             description=json.dumps(fix, ensure_ascii=False)[:800],
         )
         return json.dumps(fix, ensure_ascii=False)
+    if name == "register_hal_module":
+        out = register_hal_module(root, str(args.get("module", "")))
+        run.emit(
+            type="tool_call",
+            status="success" if out.get("ok") else "failed",
+            title=f"register_hal_module {args.get('module')}",
+            description=json.dumps(out, ensure_ascii=False)[:800],
+        )
+        return json.dumps(out, ensure_ascii=False)
+    if name.startswith("configure_"):
+        kind = name.replace("configure_", "")
+        out = configure_peripheral(root, kind, args)
+        run.emit(
+            type="tool_call",
+            status="success" if out.get("ok") else "failed",
+            title=name,
+            files=out.get("files") or [],
+            description=json.dumps(out, ensure_ascii=False)[:800],
+        )
+        return json.dumps(out, ensure_ascii=False)
     return f"unknown tool {name}"
 
 
 async def _await_approval(run: AgentRun, approval_id: str) -> str:
+    if run.always_approve:
+        return "approved"
+    run.pending_approval_id = approval_id
     run.approval_event.clear()
     run.approval_decision = "pending"
     try:
         await asyncio.wait_for(run.approval_event.wait(), timeout=3600)
     except TimeoutError:
+        run.pending_approval_id = None
         return "rejected"
+    run.pending_approval_id = None
     if run.cancelled():
         return "RUN_STOPPED"
     return run.approval_decision
@@ -273,6 +320,30 @@ async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str) -> 
     return "ok"
 
 
+async def _apply_known_fixes(run: AgentRun, root: Path, compiled: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic Error Memory: known signature → fix → rebuild. Unknown errors stay for the LLM."""
+    text = str(compiled.get("combined") or "")
+    hits = match_known_errors(text)
+    applied = False
+    for hit in hits:
+        if not hit.get("mechanical"):
+            continue
+        fix = apply_known_fix(root, hit["id"])
+        run.emit(
+            type="tool_call",
+            status="success" if fix.get("applied") else "failed",
+            title=f"Known Fix {hit['id']}",
+            description=json.dumps(fix, ensure_ascii=False)[:800],
+        )
+        if fix.get("applied"):
+            applied = True
+            compiled = await _compile(run, root)
+            mark_fix_result(hit["id"], success=bool(compiled.get("success")))
+            if compiled.get("success"):
+                return compiled
+    return compiled if applied else compiled
+
+
 async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
     async def on_line(stream: str, line: str) -> None:
         run.emit(type="terminal", status="running", title="make", stream=stream, content=line, output=line)
@@ -330,11 +401,20 @@ async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
         pin = led_from_ioc(ioc)
         led = validate_led_task(root, pin)
         usart = inspect_usart(root)
+        semantic = validate_project(root, run.prompt)
         run.emit(
             type="validation",
-            status="success" if led["passed"] else "failed",
-            title=f"静态 LED 校验 {led['score']} (pin {pin})",
-            description=json.dumps({"method": "static_source", "led": led["checks"], "usart": usart.get("checks")}, ensure_ascii=False),
+            status="success" if semantic.get("passed") or led["passed"] else "failed",
+            title=f"静态校验 score={semantic.get('score', led['score'])} pin={pin}",
+            description=json.dumps(
+                {
+                    "method": "static_source",
+                    "led": led["checks"],
+                    "usart": usart.get("checks"),
+                    "semantic": semantic,
+                },
+                ensure_ascii=False,
+            ),
         )
         if _wants_device(run.prompt):
             await _maybe_run_on_device(run, root)
@@ -550,7 +630,11 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
         choice = data["choices"][0]["message"]
         messages.append(choice)
         tool_calls = choice.get("tool_calls") or []
-        save_model_call(run.id, settings.llm_model, data.get("usage"), latency, len(tool_calls))
+        usage = data.get("usage") or {}
+        run.input_tokens += int(usage.get("prompt_tokens") or 0)
+        run.output_tokens += int(usage.get("completion_tokens") or 0)
+        run.latency_ms += latency
+        save_model_call(run.id, settings.llm_model, usage, latency, len(tool_calls))
         if not tool_calls:
             text = choice.get("content") or ""
             run.emit(type="reasoning", status="success", title="模型回复", description=text[:500])
@@ -581,6 +665,8 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
                     result = f"PATCH_FAILED: {e}"
             elif fn == "compile_project":
                 compiled = await _compile(run, root)
+                if not compiled.get("success"):
+                    compiled = await _apply_known_fixes(run, root, compiled)
                 result = json.dumps(compiled, ensure_ascii=False)
                 if compiled.get("success") and not _wants_device(run.prompt):
                     run.status = "success"

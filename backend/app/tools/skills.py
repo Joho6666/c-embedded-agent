@@ -59,9 +59,17 @@ def skill_summary(skill: dict[str, Any]) -> dict[str, Any]:
         "id": skill.get("id"),
         "name": skill.get("name"),
         "capabilities": skill.get("capabilities") or [],
+        "pins": skill.get("pins") or [],
+        "clocks": skill.get("clocks") or [],
+        "halModules": skill.get("halModules") or [],
+        "sourceFiles": skill.get("sourceFiles") or [],
+        "irq": skill.get("irq") or [],
+        "dma": skill.get("dma") or [],
+        "initOrder": skill.get("initOrder") or [],
         "validators": [v.get("label") for v in (skill.get("validators") or [])],
         "knownErrors": [e.get("pattern") for e in (skill.get("knownErrors") or [])],
-        "goldenExamples": [g.get("title") for g in (skill.get("goldenExamples") or [])],
+        "goldenExamples": [g.get("title") or g.get("path") for g in (skill.get("goldenExamples") or [])],
+        "knowledge": skill.get("knowledge") or skill.get("knowledgeCollections") or [],
     }
 
 

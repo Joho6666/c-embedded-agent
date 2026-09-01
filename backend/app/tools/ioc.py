@@ -21,7 +21,8 @@ def parse_ioc(content: str, filename: str = "project.ioc") -> dict[str, Any]:
     pins = _pins(kv)
     conflicts = _conflicts(pins)
     periph = _peripherals(kv, pins)
-    nvic = sorted({v for k, v in kv.items() if k.startswith("NVIC.") and v and v not in {"true", "false", "ENABLE", "DISABLE"}})
+    nvic = _nvic(kv)
+    dma = _dma(kv, periph["dma"])
     freertos = any("FREERTOS" in k.upper() or "FreeRTOS" in k for k in kv)
     middleware = _middleware(kv)
     board = _guess_board(mcu, clock, pins)
@@ -41,8 +42,11 @@ def parse_ioc(content: str, filename: str = "project.ioc") -> dict[str, Any]:
         "adc": periph["adc"],
         "tim": periph["tim"],
         "pwm": periph["pwm"],
-        "dma": periph["dma"],
+        "dma": dma,
         "nvic": nvic[:40],
+        "gpioPull": _gpio_fields(kv, "GPIO_PuPd"),
+        "gpioSpeed": _gpio_fields(kv, "GPIO_Speed"),
+        "gpioMode": _gpio_fields(kv, "Mode"),
         "freertos": freertos,
         "middleware": middleware,
         "conflicts": conflicts,
@@ -113,6 +117,16 @@ def _clock_tree(kv: dict[str, str]) -> dict[str, Any]:
         "hsiHz": hsi,
         "pllMul": pll_mul,
         "pllSource": pll_src,
+        "pllSettings": {
+            "source": pll_src,
+            "mul": pll_mul,
+            "hsePrediv": kv.get("RCC.HSE_PREDIV") or kv.get("RCC.Prediv1Source"),
+        },
+        "clockSource": kv.get("RCC.SYSCLKSource") or kv.get("RCC.SYSCLKFreq_Value") or pll_src,
+        "apbPrescaler": {
+            "apb1": kv.get("RCC.APB1CLKDivider") or kv.get("RCC.APB1Div"),
+            "apb2": kv.get("RCC.APB2CLKDivider") or kv.get("RCC.APB2Div"),
+        },
         "sysclkHz": sysclk,
         "ahbHz": ahb,
         "apb1Hz": apb1,
@@ -121,7 +135,9 @@ def _clock_tree(kv: dict[str, str]) -> dict[str, Any]:
     }
 
 
-_PIN_RE = re.compile(r"^(P[A-K]\d{1,2})\.(Signal|Mode|Locked|GPIO_Label|Stm32CubeMx_Label)$")
+_PIN_RE = re.compile(
+    r"^(P[A-K]\d{1,2})\.(Signal|Mode|Locked|GPIO_Label|Stm32CubeMx_Label|GPIO_PuPd|GPIO_Speed|Pull|Speed)$"
+)
 
 
 def _pins(kv: dict[str, str]) -> list[dict[str, Any]]:
@@ -160,6 +176,8 @@ def _pins(kv: dict[str, str]) -> list[dict[str, Any]]:
                 "peripheral": peripheral,
                 "direction": direction,
                 "locked": fields.get("Locked") == "true",
+                "pull": fields.get("GPIO_PuPd") or fields.get("Pull"),
+                "speed": fields.get("GPIO_Speed") or fields.get("Speed"),
             }
         )
     return pins
@@ -234,6 +252,41 @@ def _middleware(kv: dict[str, str]) -> list[str]:
             if part and part not in names:
                 names.append(part)
     return names[:20]
+
+
+def _gpio_fields(kv: dict[str, str], suffix: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, value in kv.items():
+        if key.endswith("." + suffix) and key[0] == "P":
+            pin = key.split(".", 1)[0]
+            if re.match(r"^P[A-K]\d{1,2}$", pin):
+                out[pin] = value
+    return out
+
+
+def _nvic(kv: dict[str, str]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for key, value in kv.items():
+        if not key.startswith("NVIC."):
+            continue
+        name = key.split(".", 1)[1]
+        enabled = value not in {"", "false", "DISABLE", "0"}
+        if enabled:
+            items.append({"irq": name, "enabled": True, "value": value})
+    return items
+
+
+def _dma(kv: dict[str, str], existing: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = list(existing)
+    seen = {x.get("name") for x in out}
+    for key, value in kv.items():
+        if "DMA" not in key.upper() or value in {"", "Disable", "DISABLE"}:
+            continue
+        name = key.split(".")[0]
+        if name not in seen:
+            seen.add(name)
+            out.append({"name": name, "kind": "dma", "enabled": True, "params": {"key": key, "value": value}})
+    return out
 
 
 def _guess_board(mcu: str | None, clock: dict[str, Any], pins: list[dict[str, Any]]) -> str | None:

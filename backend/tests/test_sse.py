@@ -3,6 +3,10 @@ import asyncio
 from app.agent.runtime import RUNS, AgentRun, event_stream
 
 
+def test_sse_no_duplicate():
+    test_sse_event_id_once()
+
+
 def test_sse_event_id_once():
     async def _run() -> None:
         run = AgentRun("run-sse", "proj", "sse", "auto")

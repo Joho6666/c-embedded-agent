@@ -14,8 +14,10 @@ class ProtectedPathError(ValueError):
 ALLOWED_WRITE_PREFIXES = ("Core/Src/", "Core/Inc/", "App/", "User/")
 FORBIDDEN_WRITE = (
     "Drivers/",
+    "Middlewares/",
     "startup",
     ".ld",
+    ".ioc",
     "Makefile",
     "makefile",
 )
@@ -42,9 +44,12 @@ def assert_writable(rel: str, *, advanced: bool = False) -> str:
         return norm
     low = norm.lower()
     name = PurePosixPath(norm).name
-    if name.lower() == "makefile" or low.endswith(".ld") or name.lower().startswith("startup"):
+    if name.lower() == "makefile" or low.endswith(".ld") or low.endswith(".ioc") or name.lower().startswith("startup"):
         raise ProtectedPathError(f"protected file: {norm}")
-    if any(norm.startswith(p) or norm.startswith(p.rstrip("/")) for p in ("Drivers/", "Drivers")):
+    if any(
+        norm.startswith(p) or norm.startswith(p.rstrip("/"))
+        for p in ("Drivers/", "Drivers", "Middlewares/", "Middlewares")
+    ):
         raise ProtectedPathError(f"protected path: {norm}")
     if not any(norm.startswith(p) or norm == p.rstrip("/") for p in ALLOWED_WRITE_PREFIXES):
         # allow files directly under Core/Inc or Core/Src without trailing extra

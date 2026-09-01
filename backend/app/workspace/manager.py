@@ -38,11 +38,15 @@ def create_project(name: str, mcu: str = "STM32F103C8T6", framework: str = "HAL"
         "led": "PC13",
     }
     (dest / "project.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    init_repo_safe(dest)
+    return meta
+
+
+def init_repo_safe(dest: Path) -> None:
     try:
         init_repo(dest)
     except Exception:
         pass
-    return meta
 
 
 def project_root(project_id: str) -> Path:

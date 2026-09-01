@@ -1,14 +1,32 @@
 # C-Embedded Agent
 
-专注 STM32F103C8T6 的嵌入式 C Agent。判断标准不是功能数量，而是：同一真实任务上，编译成功率、一次成功率、自动修复率是否高于直接问模型。
+AI firmware engineering agent for STM32F103 — requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
 
-## 模式
+Version: **0.8.0-beta** (Late Beta). Not a Production Candidate: Agent vs Baseline was not executed (no LLM configured on this machine).
 
-- **DEMO**：后端未启动，顶栏 DEMO，走前端 Mock（不会伪装 LIVE 成功）
-- **LIVE**：FastAPI 已启动。没有 `arm-none-eabi-gcc` 时明确报缺失，**不会伪装 Build Successful**
-- **OFFLINE**：配置了 API URL 但后端不可达
+The evaluation question is not “how many pages were added?”. It is:
 
-## 启动
+- On the same STM32F103 task, how often does a plain LLM compile?
+- How often does C-Embedded Agent compile and pass semantic validation?
+
+## Support Matrix
+
+| Platform | Build | Agent | Flash | Hardware Validate |
+|---|---|---|---|---|
+| STM32F103 HAL | ✅ | Beta | Beta | Beta |
+| STM32F407 | ❌ | ❌ | ❌ | ❌ |
+| ESP32 | ❌ | ❌ | ❌ | ❌ |
+| 8051 | ❌ | ❌ | ❌ | ❌ |
+
+Do not claim ESP32 / 8051 / F407 are available.
+
+## Modes
+
+- **DEMO**: backend not running. Top bar DEMO. Frontend mock only — never pretends LIVE success.
+- **LIVE**: FastAPI running. Missing `arm-none-eabi-gcc` is reported as missing; **never** fakes Build Successful.
+- **OFFLINE**: API URL configured but backend unreachable.
+
+## Start
 
 ```bash
 npm install
@@ -20,44 +38,72 @@ pip install -r backend/requirements.txt
 python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-打开 http://localhost:3000
+Open http://localhost:3000
 
-环境变量见 `.env.example`。LLM 必须是公网 http/https（拒绝 localhost / 私网）。未配置 LLM 时 Agent 会报不可用，并尝试直接 `make`。
+See `.env.example`. LLM must be public http/https (localhost / private hosts rejected). Without LLM the Agent reports unavailable and still tries `make`.
 
-## STM32F103 官方模板
+`GET /api/version` returns App / Agent Runtime / Template / STM32CubeF1 versions. HAL/CMSIS pin is `vendor.lock.json`.
 
-默认工程：`templates/stm32f103_hal_official`（STM32CubeF1 CMSIS + HAL，不是自制 stub）。
+## STM32F103 official template
 
-- MCU：STM32F103C8T6
-- 板：Blue Pill
-- LED：**PC13**，500ms toggle
-- 同步官方驱动：`python scripts/sync_cubef1.py`
+Default project: `templates/stm32f103_hal_official` (STM32CubeF1 CMSIS + HAL, not a stub).
+
+- MCU: STM32F103C8T6
+- Board: Blue Pill
+- LED: **PC13**, 500ms toggle
+- Sync official drivers: `python scripts/sync_cubef1.py`
 
 ```bash
 cd templates/stm32f103_hal_official
 make clean && make -j4
 ```
 
-需要 `arm-none-eabi-gcc` / `objcopy` / `size` / `make`。本机没有工具链时测试会 skip，不编造成绩。
+Needs `arm-none-eabi-gcc` / `objcopy` / `size` / `make`. Tests skip when the toolchain is absent — they do not invent scores.
 
-后端也会自动探测用户目录便携工具链：
+Portable toolchain autodetection:
 
 - `%USERPROFILE%/tools/xpack-arm-none-eabi-gcc-13.3.1-1.1/bin`
 - `%USERPROFILE%/tools/xpack-windows-build-tools-4.4.1-3/bin`
 
-或设置 `CEA_TOOLCHAIN_PATH`。官方模板已在本机用 ARM GCC 13.3 真实链接出 `firmware.elf/.hex/.bin`（Flash text+data ≈ 2.9KB）。
+or `CEA_TOOLCHAIN_PATH`.
 
-Golden 回归夹具：
+## Golden projects
 
-- LED PC13：`examples/golden/stm32f103_led/`
-- USART1 115200 PA9/PA10：`examples/golden/stm32f103_usart/`
-- TIM2 PWM PA0：`examples/golden/stm32f103_pwm/`
+All of the following compiled on this machine with ARM GCC 13.3 into `firmware.elf` / `.hex` / `.bin`:
 
-刷新外设黄金工程：`python examples/golden/sync_overlay.py all`
+| Project | Path |
+|---|---|
+| LED | `examples/golden/stm32f103_led/` |
+| EXTI | `examples/golden/stm32f103_exti/` |
+| TIM interrupt | `examples/golden/stm32f103_tim_interrupt/` |
+| PWM | `examples/golden/stm32f103_pwm/` |
+| USART | `examples/golden/stm32f103_usart/` |
+| USART interrupt | `examples/golden/stm32f103_usart_it/` |
+| USART DMA | `examples/golden/stm32f103_usart_dma/` |
+| ADC poll | `examples/golden/stm32f103_adc/` |
+| ADC DMA | `examples/golden/stm32f103_adc_dma/` |
+| I2C | `examples/golden/stm32f103_i2c/` |
+| SPI | `examples/golden/stm32f103_spi/` |
 
-## Agent 规则
+Refresh: `python examples/golden/sync_overlay.py all`
 
-先读工程 → 查 Knowledge / MCU pin → 最小修改 Core → `make` → 按真实 GCC/LD 错误修复。默认禁止改 `Drivers/`、`startup*.s`、`*.ld`、`Makefile`。
+## Agent rules
+
+Read the tree → Knowledge / MCU pin / IOC / Skill recipe → `configure_*` for init → LLM writes application logic → `make` → known Error Memory fix before asking the model again.
+
+Default writes are limited to `Core/Src` and `Core/Inc`. Protected: `Drivers/`, `Middlewares/`, `startup*.s`, `*.ld`, `Makefile`, `*.ioc`. HAL sources are registered with `register_hal_module`, not by letting the model edit the Makefile.
+
+Context priority: **IOC > project.json > Board Profile > Default**.
+
+Existing STM32 trees can be scanned/imported (`scan_existing_project` / `POST /api/projects/import-existing`) instead of rebuilding from the template. Import-ioc still creates a template project plus the `.ioc` sidecar.
+
+## Hardware
+
+Build → compile fix → Flash → verify reset → Serial → hardware validator. At most **3** flash iterations. Status is one of `PASS | FAIL | PARTIAL | UNKNOWN | UNAVAILABLE`. PWM without a probe is `PARTIAL`. LED without GPIO feedback is static pass + hardware `UNVERIFIED`. No board → **Hardware Not Tested**, never PASS.
+
+Per-project session: `hardware-session.json` (`debugger`, `serialDevice`, `baud`, `board`, `mcu`).
+
+USART expect: `CEA:USART:PASS`. ADC expect: `CEA:ADC:value=` in 0–4095.
 
 ## Benchmark
 
@@ -65,15 +111,25 @@ Golden 回归夹具：
 python benchmarks/benchmark.py
 ```
 
-输出 `benchmarks/stm32f103/results.json`。无 LLM 或无 ARM GCC 时 skip 并写明原因。
+Writes:
 
-## 测试 / CI
+- `benchmarks/stm32f103/results.json`
+- `benchmarks/stm32f103/latest-summary.json` (commit this)
+- `benchmarks/comparison-summary.json` (Agent vs Baseline)
+
+This checkout: ARM GCC present, **LLM not configured**. Summary records skip reasons and zeros. Template itself compiled (`template_build: true`). No fake Agent vs Baseline percentages.
+
+## Tests / CI
 
 ```bash
 cd backend && python -m pytest -q
 npm run build
 ```
 
-GitHub Actions：前端 `npm ci && npm run build`，后端 `pytest`。ARM GCC 为 optional。
+GitHub Actions: frontend `npm ci && npm run build`, backend `pytest`. ARM GCC is optional (golden `make` tests skip).
 
-本轮范围仅 STM32F103。不做 ESP32 / C51 / F407。
+Leftover Universal AI Gateway tests (`tests/test_gateway.py`, `tests/test_v090.py`) are **ignored** by pytest. They target `/v1` / `/admin` which this app does not mount. That is not deleting Agent tests.
+
+`unigateway/` is an independent mock console from an older graft. It is not imported by the Embedded Agent. Do not treat it as part of this product.
+
+This release is STM32F103 only.

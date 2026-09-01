@@ -5,20 +5,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["GPIO"],
+    "supportedTasks": ["led", "gpio_input", "button_led"],
+    "pins": [{"pin": "PC13", "signal": "LED", "mode": "GPIO_Output"}],
+    "clocks": ["__HAL_RCC_GPIOC_CLK_ENABLE"],
+    "halModules": ["GPIO"],
+    "sourceFiles": ["Core/Src/gpio.c"],
+    "headers": ["Core/Inc/gpio.h"],
+    "irq": [],
+    "dma": [],
+    "initOrder": ["MX_GPIO_Init"],
     "capabilities": ["Output", "Input", "Toggle", "Open Drain"],
-    "knowledgeCollections": ["HAL GPIO", "RM0008 GPIO", "CubeF1 GPIO Example"],
-    "goldenExamples": [
-      {"id": "gpio-led", "title": "PC13 LED Toggle", "summary": "HAL_GPIO_TogglePin + HAL_Delay(500)"}
-    ],
-    "validators": [
-      {"id": "clk", "label": "GPIOx clock enabled"},
-      {"id": "init", "label": "HAL_GPIO_Init present"}
-    ],
-    "knownErrors": [
-      {"pattern": "GPIO_PIN_x undeclared", "hint": "Pin macro missing or wrong header"}
-    ],
+    "knowledgeCollections": ["HAL GPIO", "RM0008 GPIO"],
+    "knowledge": ["HAL GPIO", "RM0008 GPIO"],
+    "goldenExamples": [{"id": "gpio-led", "title": "PC13 LED Toggle", "path": "examples/golden/stm32f103_led"}],
+    "validators": [{"id": "clk", "label": "GPIOx clock enabled"}, {"id": "init", "label": "HAL_GPIO_Init present"}],
+    "knownErrors": [{"pattern": "GPIO_PIN_x undeclared", "hint": "Pin macro missing or wrong header"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -28,17 +31,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["EXTI", "GPIO"],
+    "supportedTasks": ["exti"],
+    "pins": [{"pin": "PA0", "signal": "EXTI0", "mode": "GPIO_MODE_IT_FALLING", "pull": "PULLUP"}],
+    "clocks": ["__HAL_RCC_GPIOA_CLK_ENABLE", "__HAL_RCC_AFIO_CLK_ENABLE"],
+    "halModules": ["GPIO", "EXTI"],
+    "sourceFiles": ["Core/Src/gpio.c", "Core/Src/stm32f1xx_it.c"],
+    "headers": ["Core/Inc/gpio.h"],
+    "irq": ["EXTI0_IRQn"],
+    "dma": [],
+    "initOrder": ["MX_GPIO_Init", "HAL_NVIC_EnableIRQ"],
     "capabilities": ["Rising", "Falling", "IRQ"],
     "knowledgeCollections": ["RM0008 EXTI", "HAL GPIO EXTI"],
-    "goldenExamples": [
-      {"id": "exti-btn", "title": "EXTI IRQ", "summary": "HAL_GPIO_EXTI_Callback"}
-    ],
-    "validators": [
-      {"id": "nvic", "label": "NVIC EXTI enabled"}
-    ],
-    "knownErrors": [],
+    "knowledge": ["RM0008 EXTI"],
+    "goldenExamples": [{"id": "exti-btn", "title": "EXTI IRQ", "path": "examples/golden/stm32f103_exti"}],
+    "validators": [{"id": "nvic", "label": "NVIC EXTI enabled"}],
+    "knownErrors": [{"pattern": "undefined reference to EXTI0_IRQHandler", "hint": "add EXTI0_IRQHandler"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -48,23 +57,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["USART1", "USART2", "USART3"],
+    "supportedTasks": ["usart_tx", "uart_printf", "adc_uart"],
+    "pins": [{"pin": "PA9", "signal": "USART1_TX"}, {"pin": "PA10", "signal": "USART1_RX"}],
+    "clocks": ["__HAL_RCC_USART1_CLK_ENABLE", "__HAL_RCC_GPIOA_CLK_ENABLE"],
+    "halModules": ["UART"],
+    "sourceFiles": ["Core/Src/usart.c", "Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c"],
+    "headers": ["Core/Inc/usart.h"],
+    "irq": [],
+    "dma": [],
+    "initOrder": ["MX_GPIO_Init", "MX_USART1_UART_Init"],
     "capabilities": ["UART TX", "UART RX", "Interrupt"],
-    "knowledgeCollections": ["HAL UART", "RM0008 USART", "CubeF1 UART Example"],
-    "goldenExamples": [
-      {"id": "usart-tx", "title": "USART TX", "summary": "HAL_UART_Transmit Hello"},
-      {"id": "usart-rx-irq", "title": "USART RX IRQ", "summary": "HAL_UART_Receive_IT"}
-    ],
-    "validators": [
-      {"id": "init", "label": "HAL_UART_Init present"},
-      {"id": "clk", "label": "USART clock enabled"},
-      {"id": "af", "label": "GPIO AF correct"},
-      {"id": "baud", "label": "Baud correct"}
-    ],
-    "knownErrors": [
-      {"pattern": "undefined reference to HAL_UART_Init", "hint": "stm32f1xx_hal_uart.c not in Makefile"}
-    ],
+    "knowledgeCollections": ["HAL UART", "RM0008 USART"],
+    "knowledge": ["HAL UART"],
+    "goldenExamples": [{"id": "usart-tx", "title": "USART TX", "path": "examples/golden/stm32f103_usart"}],
+    "validators": [{"id": "init", "label": "HAL_UART_Init present"}],
+    "knownErrors": [{"pattern": "undefined reference to HAL_UART_Init", "hint": "register_hal_module UART"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -74,17 +83,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["USART1", "DMA"],
+    "supportedTasks": ["usart_dma_rx"],
+    "pins": [{"pin": "PA9", "signal": "USART1_TX"}, {"pin": "PA10", "signal": "USART1_RX"}],
+    "clocks": ["__HAL_RCC_USART1_CLK_ENABLE", "__HAL_RCC_DMA1_CLK_ENABLE"],
+    "halModules": ["UART", "DMA"],
+    "sourceFiles": ["Core/Src/usart.c"],
+    "headers": ["Core/Inc/usart.h"],
+    "irq": ["USART1_IRQn", "DMA1_Channel5_IRQn"],
+    "dma": [{"instance": "DMA1_Channel5", "dir": "RX"}],
+    "initOrder": ["MX_USART1_UART_Init", "HAL_UART_Receive_DMA"],
     "capabilities": ["UART TX", "UART RX", "DMA"],
-    "knowledgeCollections": ["HAL UART DMA", "RM0008 DMA"],
-    "goldenExamples": [
-      {"id": "usart-dma", "title": "USART DMA", "summary": "HAL_UART_Transmit_DMA"}
-    ],
-    "validators": [
-      {"id": "dma", "label": "DMA clock + channel"}
-    ],
-    "knownErrors": [],
+    "knowledgeCollections": ["HAL UART DMA"],
+    "knowledge": ["HAL UART DMA"],
+    "goldenExamples": [{"id": "usart-dma", "title": "USART DMA", "path": "examples/golden/stm32f103_usart_dma"}],
+    "validators": [{"id": "dma", "label": "DMA clock + channel"}],
+    "knownErrors": [{"pattern": "undefined reference to HAL_UART_Receive_DMA", "hint": "register UART+DMA"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -94,19 +109,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["TIM1", "TIM2", "TIM3", "TIM4"],
+    "supportedTasks": ["tim_basic", "tim_irq"],
+    "pins": [],
+    "clocks": ["__HAL_RCC_TIM3_CLK_ENABLE"],
+    "halModules": ["TIM"],
+    "sourceFiles": ["Core/Src/tim.c"],
+    "headers": ["Core/Inc/tim.h"],
+    "irq": ["TIM3_IRQn"],
+    "dma": [],
+    "initOrder": ["MX_TIM3_Init", "HAL_TIM_Base_Start_IT"],
     "capabilities": ["Base timer", "Interrupt", "PWM"],
-    "knowledgeCollections": ["HAL TIM", "RM0008 TIM"],
-    "goldenExamples": [
-      {"id": "tim-base", "title": "TIM base", "summary": "HAL_TIM_Base_Start_IT"}
-    ],
-    "validators": [
-      {"id": "init", "label": "HAL_TIM_Base_Init present"}
-    ],
-    "knownErrors": [
-      {"pattern": "undefined reference to HAL_TIM_Base_Init", "hint": "stm32f1xx_hal_tim.c missing"}
-    ],
+    "knowledgeCollections": ["HAL TIM"],
+    "knowledge": ["HAL TIM"],
+    "goldenExamples": [{"id": "tim-base", "title": "TIM3 IRQ", "path": "examples/golden/stm32f103_tim_interrupt"}],
+    "validators": [{"id": "init", "label": "HAL_TIM_Base_Init present"}],
+    "knownErrors": [{"pattern": "undefined reference to HAL_TIM_Base_Init", "hint": "register_hal_module TIM"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -116,19 +135,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["TIM2", "TIM3", "TIM4"],
+    "supportedTasks": ["pwm", "pwm_servo"],
+    "pins": [{"pin": "PA0", "signal": "TIM2_CH1", "mode": "GPIO_MODE_AF_PP"}],
+    "clocks": ["__HAL_RCC_TIM2_CLK_ENABLE", "__HAL_RCC_GPIOA_CLK_ENABLE"],
+    "halModules": ["TIM"],
+    "sourceFiles": ["Core/Src/tim.c"],
+    "headers": ["Core/Inc/tim.h"],
+    "irq": [],
+    "dma": [],
+    "initOrder": ["MX_TIM2_Init", "HAL_TIM_PWM_Start"],
     "capabilities": ["PWM output", "Duty cycle"],
-    "knowledgeCollections": ["HAL TIM PWM", "RM0008 TIM"],
-    "goldenExamples": [
-      {"id": "pwm-pa0", "title": "TIM2 CH1 PWM", "summary": "PA0 PWM"}
-    ],
-    "validators": [
-      {"id": "pwm", "label": "HAL_TIM_PWM_Init present"}
-    ],
-    "knownErrors": [
-      {"pattern": "undefined reference to HAL_TIM_PWM_Init", "hint": "HAL TIM source or HAL_TIM_MODULE_ENABLED"}
-    ],
+    "knowledgeCollections": ["HAL TIM PWM"],
+    "knowledge": ["HAL TIM PWM"],
+    "goldenExamples": [{"id": "pwm-pa0", "title": "TIM2 CH1 PWM", "path": "examples/golden/stm32f103_pwm"}],
+    "validators": [{"id": "pwm", "label": "HAL_TIM_PWM_Init present"}],
+    "knownErrors": [{"pattern": "undefined reference to HAL_TIM_PWM_Init", "hint": "register_hal_module TIM"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -138,17 +161,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["ADC1", "ADC2"],
+    "supportedTasks": ["adc_poll", "adc_uart"],
+    "pins": [{"pin": "PA0", "signal": "ADC1_IN0", "mode": "GPIO_MODE_ANALOG"}],
+    "clocks": ["__HAL_RCC_ADC1_CLK_ENABLE", "__HAL_RCC_GPIOA_CLK_ENABLE"],
+    "halModules": ["ADC"],
+    "sourceFiles": ["Core/Src/adc.c"],
+    "headers": ["Core/Inc/adc.h"],
+    "irq": [],
+    "dma": [],
+    "initOrder": ["MX_ADC1_Init", "HAL_ADC_Start"],
     "capabilities": ["Polling", "Interrupt"],
-    "knowledgeCollections": ["HAL ADC", "RM0008 ADC"],
-    "goldenExamples": [
-      {"id": "adc-poll", "title": "ADC poll", "summary": "HAL_ADC_PollForConversion"}
-    ],
-    "validators": [
-      {"id": "init", "label": "HAL_ADC_Init present"}
-    ],
-    "knownErrors": [],
+    "knowledgeCollections": ["HAL ADC"],
+    "knowledge": ["HAL ADC"],
+    "goldenExamples": [{"id": "adc-poll", "title": "ADC poll", "path": "examples/golden/stm32f103_adc"}],
+    "validators": [{"id": "init", "label": "HAL_ADC_Init present"}],
+    "knownErrors": [{"pattern": "undefined reference to HAL_ADC_Init", "hint": "register_hal_module ADC"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -158,17 +187,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["ADC1", "DMA"],
+    "supportedTasks": ["adc_dma"],
+    "pins": [{"pin": "PA0", "signal": "ADC1_IN0"}],
+    "clocks": ["__HAL_RCC_ADC1_CLK_ENABLE", "__HAL_RCC_DMA1_CLK_ENABLE"],
+    "halModules": ["ADC", "DMA"],
+    "sourceFiles": ["Core/Src/adc.c"],
+    "headers": ["Core/Inc/adc.h"],
+    "irq": ["DMA1_Channel1_IRQn"],
+    "dma": [{"instance": "DMA1_Channel1", "dir": "ADC1"}],
+    "initOrder": ["MX_ADC1_Init", "HAL_ADC_Start_DMA"],
     "capabilities": ["ADC", "DMA"],
-    "knowledgeCollections": ["HAL ADC DMA", "RM0008 DMA"],
-    "goldenExamples": [
-      {"id": "adc-dma", "title": "ADC DMA", "summary": "HAL_ADC_Start_DMA"}
-    ],
-    "validators": [
-      {"id": "dma", "label": "DMA for ADC configured"}
-    ],
-    "knownErrors": [],
+    "knowledgeCollections": ["HAL ADC DMA"],
+    "knowledge": ["HAL ADC DMA"],
+    "goldenExamples": [{"id": "adc-dma", "title": "ADC DMA", "path": "examples/golden/stm32f103_adc_dma"}],
+    "validators": [{"id": "dma", "label": "DMA for ADC configured"}],
+    "knownErrors": [{"pattern": "undefined reference to HAL_ADC_Start_DMA", "hint": "register ADC+DMA"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -178,17 +213,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["I2C1", "I2C2"],
+    "supportedTasks": ["i2c_scan", "eeprom_i2c"],
+    "pins": [{"pin": "PB6", "signal": "I2C1_SCL"}, {"pin": "PB7", "signal": "I2C1_SDA"}],
+    "clocks": ["__HAL_RCC_I2C1_CLK_ENABLE", "__HAL_RCC_GPIOB_CLK_ENABLE"],
+    "halModules": ["I2C"],
+    "sourceFiles": ["Core/Src/i2c.c"],
+    "headers": ["Core/Inc/i2c.h"],
+    "irq": [],
+    "dma": [],
+    "initOrder": ["MX_I2C1_Init"],
     "capabilities": ["Master TX", "Master RX"],
-    "knowledgeCollections": ["HAL I2C", "RM0008 I2C"],
-    "goldenExamples": [
-      {"id": "i2c-scan", "title": "I2C master", "summary": "HAL_I2C_Master_Transmit"}
-    ],
-    "validators": [
-      {"id": "init", "label": "HAL_I2C_Init present"}
-    ],
-    "knownErrors": [],
+    "knowledgeCollections": ["HAL I2C"],
+    "knowledge": ["HAL I2C"],
+    "goldenExamples": [{"id": "i2c-scan", "title": "I2C master", "path": "examples/golden/stm32f103_i2c"}],
+    "validators": [{"id": "init", "label": "HAL_I2C_Init present"}],
+    "knownErrors": [{"pattern": "undefined reference to HAL_I2C_Init", "hint": "register_hal_module I2C"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -198,17 +239,23 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["SPI1", "SPI2"],
+    "supportedTasks": ["spi"],
+    "pins": [{"pin": "PA5", "signal": "SPI1_SCK"}, {"pin": "PA6", "signal": "SPI1_MISO"}, {"pin": "PA7", "signal": "SPI1_MOSI"}],
+    "clocks": ["__HAL_RCC_SPI1_CLK_ENABLE", "__HAL_RCC_GPIOA_CLK_ENABLE"],
+    "halModules": ["SPI"],
+    "sourceFiles": ["Core/Src/spi.c"],
+    "headers": ["Core/Inc/spi.h"],
+    "irq": [],
+    "dma": [],
+    "initOrder": ["MX_SPI1_Init"],
     "capabilities": ["Master", "Full duplex"],
-    "knowledgeCollections": ["HAL SPI", "RM0008 SPI"],
-    "goldenExamples": [
-      {"id": "spi-tx", "title": "SPI master", "summary": "HAL_SPI_Transmit"}
-    ],
-    "validators": [
-      {"id": "init", "label": "HAL_SPI_Init present"}
-    ],
-    "knownErrors": [],
+    "knowledgeCollections": ["HAL SPI"],
+    "knowledge": ["HAL SPI"],
+    "goldenExamples": [{"id": "spi-tx", "title": "SPI master", "path": "examples/golden/stm32f103_spi"}],
+    "validators": [{"id": "init", "label": "HAL_SPI_Init present"}],
+    "knownErrors": [{"pattern": "undefined reference to HAL_SPI_Init", "hint": "register_hal_module SPI"}],
     "benchmarkScore": null,
-    "version": "0.1.0",
+    "version": "0.8.0-beta",
     "enabled": true,
     "status": "ready"
   },
@@ -218,18 +265,24 @@
     "platform": "STM32",
     "mcuFamilies": ["STM32F1"],
     "peripherals": ["SYS"],
+    "supportedTasks": [],
+    "pins": [],
+    "clocks": [],
+    "halModules": [],
+    "sourceFiles": [],
+    "headers": [],
+    "irq": [],
+    "dma": [],
+    "initOrder": [],
     "capabilities": ["Tasks", "Queues", "Delay"],
     "knowledgeCollections": ["CMSIS-RTOS", "FreeRTOS"],
-    "goldenExamples": [
-      {"id": "rtos-task", "title": "FreeRTOS task", "summary": "osThreadNew / xTaskCreate"}
-    ],
-    "validators": [
-      {"id": "cmsis", "label": "cmsis_os / FreeRTOS included"}
-    ],
+    "knowledge": ["FreeRTOS"],
+    "goldenExamples": [{"id": "rtos-task", "title": "FreeRTOS task", "summary": "not supported this release"}],
+    "validators": [{"id": "cmsis", "label": "cmsis_os / FreeRTOS included"}],
     "knownErrors": [],
     "benchmarkScore": null,
-    "version": "0.1.0",
-    "enabled": true,
-    "status": "ready"
+    "version": "0.8.0-beta",
+    "enabled": false,
+    "status": "not-supported"
   }
 ]

@@ -11,7 +11,9 @@ from app.tools.flash import FlashError, detect_chip_id, flash_elf
 from app.tools.serialutil import connect as serial_connect
 from app.tools.serialutil import disconnect as serial_disconnect
 from app.tools.serialutil import read_available, status as serial_status
+from app.tools.hw_session import load_session
 from app.tools.validate import inspect_usart, validate_led_task
+from app.validation import hardware_status, validate_project
 
 
 def _step(kind: str, title: str, status: str, detail: str = "", logs: str = "", reason: str = "") -> dict[str, Any]:
@@ -32,6 +34,49 @@ def run_pipeline(
     serial_device: str | None = None,
     baud: int = 115200,
     expect: str | None = None,
+    task: str = "",
+    max_hw_iterations: int = 3,
+) -> dict[str, Any]:
+    sess = load_session(root)
+    serial_device = serial_device or sess.get("serialDevice")
+    baud = int(baud or sess.get("baud") or 115200)
+    last: dict[str, Any] | None = None
+    for attempt in range(max(1, min(int(max_hw_iterations or 3), 3))):
+        last = _run_pipeline_once(
+            root,
+            serial_device=serial_device,
+            baud=baud,
+            expect=expect,
+            task=task,
+            attempt=attempt + 1,
+        )
+        val = (last.get("validation") or {}).get("status")
+        if val in {"PASS", "pass", "PARTIAL", "UNKNOWN", "UNAVAILABLE"}:
+            last["hardwareIterations"] = attempt + 1
+            return last
+        if val in {"FAIL", "fail"} and attempt + 1 < 3:
+            from app.tools.error_memory import apply_known_fix, match_known_errors
+
+            blob = json_safe(last)
+            for hit in match_known_errors(blob):
+                if hit.get("mechanical"):
+                    apply_known_fix(root, hit["id"])
+            continue
+        last["hardwareIterations"] = attempt + 1
+        return last
+    last = last or {"available": True, "steps": [], "validation": _unknown_val()}
+    last["hardwareIterations"] = 3
+    return last
+
+
+def _run_pipeline_once(
+    root: Path,
+    *,
+    serial_device: str | None = None,
+    baud: int = 115200,
+    expect: str | None = None,
+    task: str = "",
+    attempt: int = 1,
 ) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
 
@@ -121,37 +166,45 @@ def run_pipeline(
         steps.append(_step("serial", "Serial", "unavailable", "未指定串口", reason="no serial device"))
 
     static = validate_led_task(root)
-    expected = expect or "USART1 115200 Hello / 500ms 或 LED PC13 500ms"
-    if serial_lines:
-        joined = "\n".join(serial_lines)
-        needle = (expect or "Hello").split()[0]
-        matched = needle.lower() in joined.lower()
-        status = "pass" if matched else "fail"
-        actual = f"{serial_device} {baud}\n" + "\n".join(serial_lines[-12:])
-        conf = 0.9 if matched else 0.4
-    else:
-        status = "unknown"
-        actual = "no serial evidence; static LED check " + ("passed" if static.get("passed") else "incomplete")
-        conf = None
+    semantic = validate_project(root, task)
+    hw = hardware_status(
+        serial_lines=serial_lines if serial_device else None,
+        expect=expect,
+        task=task or "led",
+        has_probe=bool(serial_device),
+    )
+    status = hw.get("status") or "UNKNOWN"
+    expected = expect or hw.get("reason") or ""
+    actual = hw.get("observed") or hw.get("reason") or ""
+    conf = 0.9 if status == "PASS" else None
+    step_status = {
+        "PASS": "success",
+        "FAIL": "failed",
+        "PARTIAL": "failed",
+        "UNKNOWN": "unavailable",
+        "UNAVAILABLE": "unavailable",
+    }.get(status, "unavailable")
     steps.append(
         _step(
             "validate",
             "Validation",
-            "success" if status == "pass" else ("failed" if status == "fail" else "unavailable"),
-            f"{status}  static={static.get('score')}",
-            json_safe(static),
-            reason="" if status == "pass" else "no hardware serial evidence" if status == "unknown" else "output mismatch",
+            step_status,
+            f"{status} static={static.get('score')} semantic={semantic.get('score')}",
+            json_safe({"static": static, "semantic": semantic, "hardware": hw}),
+            reason="" if status == "PASS" else str(hw.get("reason") or status),
         )
     )
     return {
         "available": True,
         "runId": f"hw-{uuid.uuid4().hex[:8]}",
+        "attempt": attempt,
         "steps": steps,
         "validation": {
             "expected": expected,
             "actual": actual,
             "status": status,
             "confidence": conf,
+            "semantic": semantic,
         },
     }
 
@@ -166,7 +219,7 @@ def json_safe(obj: Any) -> str:
 
 
 def _unknown_val() -> dict[str, Any]:
-    return {"expected": "", "actual": "", "status": "unknown", "confidence": None}
+    return {"expected": "", "actual": "", "status": "UNAVAILABLE", "confidence": None, "reason": "Hardware Not Tested"}
 
 
 def sample_serial(device: str, baud: int = 115200, seconds: float = 2.0) -> dict[str, Any]:

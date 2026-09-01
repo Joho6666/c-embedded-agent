@@ -57,14 +57,22 @@ def build_context(
         files = []
     core = [f for f in files if f.startswith("Core/") and f.endswith((".c", ".h"))]
     ioc = load_ioc_analysis(root)
-    led = led_from_ioc(ioc)
+    project_cfg: dict[str, Any] = {}
+    pj = root / "project.json"
+    if pj.is_file():
+        try:
+            project_cfg = json.loads(pj.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            project_cfg = {}
+    led = led_from_ioc(ioc) if ioc else (project_cfg.get("led") or "PC13")
     skills = [skill_summary(s) for s in match_skills(prompt)]
     for s in extra_skills or []:
         sid = s.get("id")
         if sid and sid not in {x.get("id") for x in skills}:
             skills.append(skill_summary(s) if "capabilities" in s else s)
-    mcu = (ioc or {}).get("mcu") or MCU["name"]
-    board_name = (ioc or {}).get("board") or board
+    # IOC > Project Config > Board Profile > Default
+    mcu = (ioc or {}).get("mcu") or project_cfg.get("mcu") or MCU["name"]
+    board_name = (ioc or {}).get("board") or project_cfg.get("board") or board
     clock = (ioc or {}).get("clock") or {}
     pins = (ioc or {}).get("pins") or []
     pin_brief = [f"{p.get('pin')}={p.get('signal')}" for p in pins[:16]]
@@ -93,6 +101,14 @@ def build_context(
         if ioc
         else None,
         "skills": skills,
+        "project": {
+            "id": project_cfg.get("id"),
+            "name": project_cfg.get("name"),
+            "framework": project_cfg.get("framework") or "HAL",
+        }
+        if project_cfg
+        else None,
+        "priority": "IOC > Project Config > Board Profile > Default",
     }
 
 

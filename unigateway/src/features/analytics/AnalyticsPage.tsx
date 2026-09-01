@@ -9,7 +9,10 @@ import { ErrorState } from "@/components/common/ErrorState";
 import { UsageChart } from "@/components/charts/UsageChart";
 import { CostChart } from "@/components/charts/CostChart";
 import { LatencyChart } from "@/components/charts/LatencyChart";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAsync } from "@/hooks/useAsync";
 import { api } from "@/lib/api";
@@ -39,9 +42,21 @@ function Rank({ title, items, format }: { title: string; items: RankItem[]; form
   );
 }
 
+function isoDate(offsetDays: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+
 export function AnalyticsPage() {
   const [range, setRange] = useState<TimeRange>("7d");
-  const { data, loading, error, reload } = useAsync(() => api.getAnalytics(range), [range]);
+  const [from, setFrom] = useState(isoDate(-13));
+  const [to, setTo] = useState(isoDate(0));
+  const [applied, setApplied] = useState({ from: isoDate(-13), to: isoDate(0) });
+  const { data, loading, error, reload } = useAsync(
+    () => api.getAnalytics(range === "custom" ? { range, from: applied.from, to: applied.to } : range),
+    [range, applied.from, applied.to],
+  );
   if (loading) return <PageSkeleton />;
   if (error || !data) return <ErrorState message={error ?? undefined} onRetry={reload} />;
 
@@ -61,6 +76,19 @@ export function AnalyticsPage() {
           </Tabs>
         }
       />
+      {range === "custom" && (
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label>{t.analytics.from}</Label>
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>{t.analytics.to}</Label>
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
+          <Button onClick={() => setApplied({ from, to })}>{t.common.apply}</Button>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
         <MetricCard label={t.dashboard.requests} value={formatCompact(data.totals.requests)} />
         <MetricCard label={t.dashboard.tokens} value={formatTokens(data.totals.tokens)} />

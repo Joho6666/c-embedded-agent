@@ -1,25 +1,47 @@
 "use client";
 
+import { useState } from "react";
+import { MoreHorizontal, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable, type Column } from "@/components/common/DataTable";
 import { PageSkeleton } from "@/components/common/Skeleton";
 import { ErrorState } from "@/components/common/ErrorState";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { UserDrawer } from "@/components/users/UserDrawer";
 import { useAsync } from "@/hooks/useAsync";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCompact, formatNumber, formatUsd } from "@/lib/format";
-import type { Group, Plan, User } from "@/types";
+import type { Group, Plan, User, UserInput } from "@/types";
 
 export function UsersPage() {
-  const { data, loading, error, reload } = useAsync(() => api.listUsers(), []);
+  const { data, loading, error, reload, setData } = useAsync(() => api.listUsers(), []);
+  const [drawer, setDrawer] = useState(false);
+  const [editing, setEditing] = useState<User | null>(null);
+
   if (loading) return <PageSkeleton />;
   if (error || !data) return <ErrorState message={error ?? undefined} onRetry={reload} />;
 
   const planName = (id: string) => data.plans.find((p) => p.id === id)?.name ?? id;
   const groupName = (id: string) => data.groups.find((g) => g.id === id)?.name ?? id;
+
+  async function save(input: UserInput) {
+    if (editing) {
+      const next = await api.updateUser(editing.id, input);
+      setData((prev) => prev ? { ...prev, users: prev.users.map((u) => (u.id === next.id ? next : u)) } : prev);
+      toast.success(t.users.updated);
+      setEditing(null);
+      return;
+    }
+    const created = await api.createUser(input);
+    setData((prev) => prev ? { ...prev, users: [created, ...prev.users] } : prev);
+    toast.success(t.users.created);
+  }
 
   const userCols: Column<User>[] = [
     { key: "n", header: t.common.name, render: (u) => <div><div>{u.name}</div><div className="text-[11px] text-muted-foreground">{u.email}</div></div> },
@@ -31,6 +53,29 @@ export function UsersPage() {
     { key: "k", header: t.users.keys, render: (u) => u.keyCount },
     { key: "q", header: t.users.requests, render: (u) => <span className="font-mono">{formatNumber(u.requestCount)}</span> },
     { key: "st", header: t.common.status, render: (u) => <Badge tone={u.status === "active" ? "success" : "warning"}>{u.status}</Badge> },
+    {
+      key: "a",
+      header: t.common.actions,
+      render: (u) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon"><MoreHorizontal /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onSelect={() => { setEditing(u); setDrawer(true); }}>{t.common.edit}</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={async () => {
+                const next = await api.updateUser(u.id, { status: u.status === "active" ? "suspended" : "active" });
+                setData((prev) => prev ? { ...prev, users: prev.users.map((x) => (x.id === next.id ? next : x)) } : prev);
+                toast.success(t.users.toggled);
+              }}
+            >
+              {u.status === "active" ? t.users.suspend : t.users.resume}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
   ];
 
   const groupCols: Column<Group>[] = [
@@ -42,7 +87,16 @@ export function UsersPage() {
 
   return (
     <div className="mx-auto max-w-[1280px] space-y-4 p-5 md:p-6">
-      <PageHeader title={t.users.title} subtitle={t.users.subtitle} />
+      <PageHeader
+        title={t.users.title}
+        subtitle={t.users.subtitle}
+        actions={
+          <Button onClick={() => { setEditing(null); setDrawer(true); }}>
+            <Plus />
+            {t.users.add}
+          </Button>
+        }
+      />
       <Tabs defaultValue="users">
         <TabsList>
           <TabsTrigger value="users">{t.users.users}</TabsTrigger>
@@ -71,6 +125,14 @@ export function UsersPage() {
           </div>
         </TabsContent>
       </Tabs>
+      <UserDrawer
+        open={drawer}
+        onOpenChange={setDrawer}
+        initial={editing}
+        groups={data.groups}
+        plans={data.plans}
+        onSubmit={save}
+      />
     </div>
   );
 }

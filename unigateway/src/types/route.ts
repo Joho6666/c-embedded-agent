@@ -27,3 +27,8 @@ export interface RoutePolicy {
   strategy: RouteStrategy;
   targets: RouteTarget[];
 }
+
+export interface RoutePatch {
+  strategy?: RouteStrategy;
+  targets?: RouteTarget[];
+}

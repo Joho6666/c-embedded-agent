@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  AnalyticsQuery,
   AnalyticsSnapshot,
   ApiKey,
   ApiKeyInput,
@@ -8,17 +9,23 @@ import type {
   CreatedApiKey,
   DashboardSnapshot,
   LogQuery,
+  Model,
+  ModelInput,
   MonitorEndpoint,
   Paged,
   Provider,
   ProviderInput,
   ProviderTestResult,
   RequestLog,
+  RoutePatch,
   RoutePolicy,
   RouteStrategy,
+  RouteTarget,
   SettingsState,
   TimePoint,
   TimeRange,
+  User,
+  UserInput,
 } from "@/types";
 import { mulberry32, sleep, uid } from "@/lib/utils";
 import {
@@ -62,12 +69,36 @@ function fakeFullKey() {
   return `ug_live_${rand}${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function seriesFor(range: TimeRange, seed = 11): TimePoint[] {
+function seriesFor(range: TimeRange, seed = 11, from?: string, to?: string): TimePoint[] {
   const rand = mulberry32(seed + range.length);
-    const hours = range === "today" ? 24 : range === "7d" ? 7 * 24 : range === "custom" ? 14 * 24 : 30 * 24;
-    const step = range === "today" ? 1 : range === "7d" ? 6 : range === "custom" ? 12 : 24;
   const points: TimePoint[] = [];
   const now = Date.now();
+
+  if (range === "custom" && from && to) {
+    const start = new Date(`${from}T00:00:00`).getTime();
+    const end = new Date(`${to}T23:59:59`).getTime();
+    const span = Math.max(1, Math.round((end - start) / 86_400_000));
+    const stepDays = span > 40 ? Math.ceil(span / 30) : 1;
+    for (let d = 0; d <= span; d += stepDays) {
+      const day = new Date(start + d * 86_400_000);
+      const wave = 0.55 + 0.45 * Math.sin(d / 3.4);
+      const requests = Math.round(2400 * wave * (0.75 + rand()));
+      const tokens = Math.round(requests * (920 + rand() * 1400));
+      const cost = Number((tokens / 1e6 * (3.8 + rand() * 2.2)).toFixed(2));
+      points.push({
+        t: day.toISOString().slice(5, 10),
+        requests,
+        tokens,
+        cost: Math.max(1.2, cost),
+        latency: Math.round(480 + rand() * 520),
+        errors: Math.round(requests * (0.008 + rand() * 0.02)),
+      });
+    }
+    return points;
+  }
+
+  const hours = range === "today" ? 24 : range === "7d" ? 7 * 24 : 30 * 24;
+  const step = range === "today" ? 1 : range === "7d" ? 6 : 24;
   for (let i = hours; i >= 0; i -= step) {
     const hour = new Date(now - i * 3600_000);
     const wave = 0.55 + 0.45 * Math.sin((hours - i) / (range === "today" ? 3.2 : 8));
@@ -86,6 +117,59 @@ function seriesFor(range: TimeRange, seed = 11): TimePoint[] {
     });
   }
   return points;
+}
+
+function applyStrategy(r: RoutePolicy, strategy: RouteStrategy) {
+  r.strategy = strategy;
+  if (strategy === "cheapest") {
+    r.targets = [...r.targets].sort((a, b) => a.inputPrice - b.inputPrice);
+    const total = r.targets.length;
+    r.targets.forEach((t, i) => {
+      t.priority = i + 1;
+      t.weight = i === 0 ? 70 : Math.round(30 / Math.max(1, total - 1));
+    });
+  }
+  if (strategy === "fastest") {
+    r.targets = [...r.targets].sort((a, b) => a.avgLatency - b.avgLatency);
+    r.targets.forEach((t, i) => {
+      t.priority = i + 1;
+      t.weight = i === 0 ? 70 : 15;
+    });
+  }
+  if (strategy === "stable") {
+    r.targets = [...r.targets].sort((a, b) => b.successRate - a.successRate);
+    r.targets.forEach((t, i) => {
+      t.priority = i + 1;
+      t.weight = i === 0 ? 80 : 10;
+    });
+  }
+  if (strategy === "failover") {
+    r.targets.forEach((t, i) => {
+      t.priority = i + 1;
+      t.weight = i === 0 ? 100 : 0;
+    });
+  }
+  if (strategy === "random") {
+    const w = Math.round(100 / Math.max(1, r.targets.length));
+    r.targets.forEach((t, i) => {
+      t.weight = w;
+      t.priority = i + 1;
+    });
+  }
+}
+
+function targetFromProvider(id: string): RouteTarget {
+  const p = state.providers.find((x) => x.id === id);
+  return {
+    providerId: id,
+    weight: 10,
+    priority: 9,
+    successRate: p?.successRate ?? 0.98,
+    avgLatency: p?.avgLatency ?? 800,
+    inputPrice: 2,
+    outputPrice: 8,
+    health: p?.health ?? "healthy",
+  };
 }
 
 export const mockDb = {
@@ -159,51 +243,73 @@ export const mockDb = {
     await sleep(70);
     return clone(state.models);
   },
+  async createModel(input: ModelInput): Promise<Model> {
+    await sleep(140);
+    const item: Model = {
+      id: uid("mdl"),
+      name: input.name,
+      providerId: input.providerId,
+      alias: input.alias,
+      inputPrice: input.inputPrice,
+      outputPrice: input.outputPrice,
+      context: input.context,
+      capabilities: input.capabilities,
+      status: input.status ?? "active",
+      preferredProviderId: input.preferredProviderId || input.providerId,
+      todayCalls: 128 + Math.round(Math.random() * 80),
+    };
+    state.models.unshift(item);
+    return clone(item);
+  },
+  async updateModel(id: string, patch: Partial<ModelInput & { status: Model["status"] }>): Promise<Model> {
+    await sleep(120);
+    const m = state.models.find((x) => x.id === id);
+    if (!m) throw new Error("model not found");
+    Object.assign(m, patch);
+    return clone(m);
+  },
+  async deleteModel(id: string) {
+    await sleep(100);
+    state.models = state.models.filter((m) => m.id !== id);
+  },
 
   async listRoutes() {
     await sleep(70);
     return clone(state.routes);
   },
-  async updateRoute(id: string, strategy: RouteStrategy): Promise<RoutePolicy> {
-    await sleep(140);
+  async updateRoute(id: string, patch: RoutePatch | RouteStrategy): Promise<RoutePolicy> {
+    await sleep(80);
     const r = state.routes.find((x) => x.id === id);
     if (!r) throw new Error("route not found");
-    r.strategy = strategy;
-    if (strategy === "cheapest") {
-      r.targets = [...r.targets].sort((a, b) => a.inputPrice - b.inputPrice);
-      const total = r.targets.length;
-      r.targets.forEach((t, i) => {
-        t.priority = i + 1;
-        t.weight = i === 0 ? 70 : Math.round(30 / Math.max(1, total - 1));
-      });
+    const next: RoutePatch = typeof patch === "string" ? { strategy: patch } : patch;
+    if (next.targets) {
+      r.targets = clone(next.targets).map((t, i) => ({ ...t, priority: t.priority || i + 1 }));
     }
-    if (strategy === "fastest") {
-      r.targets = [...r.targets].sort((a, b) => a.avgLatency - b.avgLatency);
-      r.targets.forEach((t, i) => {
-        t.priority = i + 1;
-        t.weight = i === 0 ? 70 : 15;
-      });
-    }
-    if (strategy === "stable") {
-      r.targets = [...r.targets].sort((a, b) => b.successRate - a.successRate);
-      r.targets.forEach((t, i) => {
-        t.priority = i + 1;
-        t.weight = i === 0 ? 80 : 10;
-      });
-    }
-    if (strategy === "failover") {
-      r.targets.forEach((t, i) => {
-        t.priority = i + 1;
-        t.weight = i === 0 ? 100 : 0;
-      });
-    }
-    if (strategy === "random") {
-      const w = Math.round(100 / r.targets.length);
-      r.targets.forEach((t, i) => {
-        t.weight = w;
-        t.priority = i + 1;
-      });
-    }
+    if (next.strategy) applyStrategy(r, next.strategy);
+    return clone(r);
+  },
+  async addRouteTarget(id: string, providerId: string): Promise<RoutePolicy> {
+    await sleep(80);
+    const r = state.routes.find((x) => x.id === id);
+    if (!r) throw new Error("route not found");
+    if (r.targets.some((t) => t.providerId === providerId)) return clone(r);
+    r.targets.push(targetFromProvider(providerId));
+    r.targets.forEach((t, i) => {
+      t.priority = i + 1;
+    });
+    r.strategy = "custom";
+    return clone(r);
+  },
+  async removeRouteTarget(id: string, providerId: string): Promise<RoutePolicy> {
+    await sleep(80);
+    const r = state.routes.find((x) => x.id === id);
+    if (!r) throw new Error("route not found");
+    if (r.targets.length <= 1) return clone(r);
+    r.targets = r.targets.filter((t) => t.providerId !== providerId);
+    r.targets.forEach((t, i) => {
+      t.priority = i + 1;
+    });
+    r.strategy = "custom";
     return clone(r);
   },
 
@@ -324,9 +430,44 @@ export const mockDb = {
     };
   },
 
-  async getAnalytics(range: TimeRange): Promise<AnalyticsSnapshot> {
+  async listUsers() {
+    await sleep(60);
+    return { users: clone(state.users), groups: clone(state.groups), plans: clone(state.plans) };
+  },
+  async createUser(input: UserInput): Promise<User> {
+    await sleep(140);
+    const item: User = {
+      id: uid("usr"),
+      name: input.name,
+      email: input.email,
+      role: input.role,
+      groupId: input.groupId,
+      planId: input.planId,
+      balance: input.balance,
+      spend: 24.8,
+      keyCount: 1,
+      requestCount: 860,
+      status: "active",
+    };
+    state.users.unshift(item);
+    const g = state.groups.find((x) => x.id === input.groupId);
+    if (g) g.memberCount += 1;
+    return clone(item);
+  },
+  async updateUser(id: string, patch: Partial<UserInput & { status: User["status"] }>): Promise<User> {
+    await sleep(120);
+    const u = state.users.find((x) => x.id === id);
+    if (!u) throw new Error("user not found");
+    Object.assign(u, patch);
+    return clone(u);
+  },
+
+  async getAnalytics(query: AnalyticsQuery | TimeRange): Promise<AnalyticsSnapshot> {
     await sleep(110);
-    const series = seriesFor(range, 21);
+    const range = typeof query === "string" ? query : query.range;
+    const from = typeof query === "string" ? undefined : query.from;
+    const to = typeof query === "string" ? undefined : query.to;
+    const series = seriesFor(range, 21, from, to);
     const requests = series.reduce((s, p) => s + p.requests, 0);
     const tokens = series.reduce((s, p) => s + p.tokens, 0);
     const cost = series.reduce((s, p) => s + p.cost, 0);
@@ -361,11 +502,6 @@ export const mockDb = {
           .map((k) => ({ id: k.id, name: k.name, value: k.used })),
       },
     };
-  },
-
-  async listUsers() {
-    await sleep(60);
-    return { users: clone(state.users), groups: clone(state.groups), plans: clone(state.plans) };
   },
 
   async getMonitor(): Promise<MonitorEndpoint[]> {

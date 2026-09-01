@@ -1,11 +1,15 @@
 import { mockDb } from "@/lib/mock/store";
 import type {
+  AnalyticsQuery,
   ApiKeyInput,
   LogQuery,
+  ModelInput,
   ProviderInput,
+  RoutePatch,
   RouteStrategy,
   SettingsState,
   TimeRange,
+  UserInput,
 } from "@/types";
 
 /** Swap this module to a remote adapter when the real Gateway exists. */
@@ -19,8 +23,13 @@ export const api = {
   pullModels: (id: string) => mockDb.pullModels(id),
   queryBalance: (id: string) => mockDb.queryBalance(id),
   listModels: () => mockDb.listModels(),
+  createModel: (input: ModelInput) => mockDb.createModel(input),
+  updateModel: (...args: Parameters<typeof mockDb.updateModel>) => mockDb.updateModel(...args),
+  deleteModel: (id: string) => mockDb.deleteModel(id),
   listRoutes: () => mockDb.listRoutes(),
-  updateRoute: (id: string, strategy: RouteStrategy) => mockDb.updateRoute(id, strategy),
+  updateRoute: (id: string, patch: RoutePatch | RouteStrategy) => mockDb.updateRoute(id, patch),
+  addRouteTarget: (id: string, providerId: string) => mockDb.addRouteTarget(id, providerId),
+  removeRouteTarget: (id: string, providerId: string) => mockDb.removeRouteTarget(id, providerId),
   listKeys: () => mockDb.listKeys(),
   createKey: (input: ApiKeyInput) => mockDb.createKey(input),
   disableKey: (id: string) => mockDb.disableKey(id),
@@ -28,8 +37,10 @@ export const api = {
   regenerateKey: (id: string) => mockDb.regenerateKey(id),
   listLogs: (query?: LogQuery) => mockDb.listLogs(query),
   getDashboard: () => mockDb.getDashboard(),
-  getAnalytics: (range: TimeRange) => mockDb.getAnalytics(range),
+  getAnalytics: (query: AnalyticsQuery | TimeRange) => mockDb.getAnalytics(query),
   listUsers: () => mockDb.listUsers(),
+  createUser: (input: UserInput) => mockDb.createUser(input),
+  updateUser: (...args: Parameters<typeof mockDb.updateUser>) => mockDb.updateUser(...args),
   getMonitor: () => mockDb.getMonitor(),
   getSettings: () => mockDb.getSettings(),
   saveSettings: (next: SettingsState) => mockDb.saveSettings(next),

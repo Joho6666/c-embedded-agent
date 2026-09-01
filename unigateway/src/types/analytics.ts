@@ -3,6 +3,12 @@ import type { RequestLog } from "./log";
 
 export type TimeRange = "today" | "7d" | "30d" | "custom";
 
+export interface AnalyticsQuery {
+  range: TimeRange;
+  from?: string;
+  to?: string;
+}
+
 export interface TimePoint {
   t: string;
   requests: number;

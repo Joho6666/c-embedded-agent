@@ -31,3 +31,12 @@ export interface Plan {
   price: number;
   description: string;
 }
+
+export interface UserInput {
+  name: string;
+  email: string;
+  role: UserRole;
+  groupId: string;
+  planId: string;
+  balance: number;
+}

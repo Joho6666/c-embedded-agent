@@ -11,14 +11,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAsync } from "@/hooks/useAsync";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
-import type { RouteStrategy } from "@/types";
+import type { RoutePolicy, RouteStrategy, RouteTarget } from "@/types";
 
 const strategies: RouteStrategy[] = ["cheapest", "fastest", "stable", "weighted", "random", "failover", "custom"];
+
+function normalize(targets: RouteTarget[], id: string, weight: number) {
+  return targets.map((t) => (t.providerId === id ? { ...t, weight } : t));
+}
+
+function moveTarget(targets: RouteTarget[], id: string, dir: -1 | 1) {
+  const next = [...targets];
+  const i = next.findIndex((t) => t.providerId === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= next.length) return next;
+  [next[i], next[j]] = [next[j], next[i]];
+  return next.map((t, idx) => ({ ...t, priority: idx + 1 }));
+}
 
 export function RoutingPage() {
   const routes = useAsync(() => api.listRoutes(), []);
   const providers = useAsync(() => api.listProviders(), []);
   const [busy, setBusy] = useState<string | null>(null);
+
+  const patch = async (id: string, run: () => Promise<RoutePolicy>) => {
+    setBusy(id);
+    try {
+      const next = await run();
+      routes.setData((prev) => (prev ?? []).map((r) => (r.id === next.id ? next : r)));
+      toast.success(t.routing.updated);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   if (routes.loading || providers.loading) return <PageSkeleton />;
   if (routes.error || !routes.data) return <ErrorState message={routes.error ?? undefined} onRetry={routes.reload} />;
@@ -34,16 +58,7 @@ export function RoutingPage() {
               <Select
                 value={route.strategy}
                 disabled={busy === route.id}
-                onValueChange={async (v) => {
-                  setBusy(route.id);
-                  try {
-                    const next = await api.updateRoute(route.id, v as RouteStrategy);
-                    routes.setData((prev) => (prev ?? []).map((r) => (r.id === next.id ? next : r)));
-                    toast.success(t.routing.updated);
-                  } finally {
-                    setBusy(null);
-                  }
-                }}
+                onValueChange={(v) => patch(route.id, () => api.updateRoute(route.id, v as RouteStrategy))}
               >
                 <SelectTrigger className="w-40">
                   <SelectValue />
@@ -57,7 +72,21 @@ export function RoutingPage() {
                 </SelectContent>
               </Select>
             </div>
-            <RouteGraph route={route} providers={providers.data ?? []} />
+            <RouteGraph
+              route={route}
+              providers={providers.data ?? []}
+              onWeight={(providerId, weight) => {
+                const targets = normalize(route.targets, providerId, weight);
+                routes.setData((prev) => (prev ?? []).map((r) => (r.id === route.id ? { ...r, targets, strategy: "custom" } : r)));
+                void api.updateRoute(route.id, { strategy: "custom", targets });
+              }}
+              onRemove={(providerId) => patch(route.id, () => api.removeRouteTarget(route.id, providerId))}
+              onAdd={(providerId) => patch(route.id, () => api.addRouteTarget(route.id, providerId))}
+              onMove={(providerId, dir) => {
+                const targets = moveTarget(route.targets, providerId, dir);
+                void patch(route.id, () => api.updateRoute(route.id, { strategy: "custom", targets }));
+              }}
+            />
           </Card>
         ))}
       </div>

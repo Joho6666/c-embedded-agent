@@ -22,3 +22,15 @@ export interface Model {
   preferredProviderId: string;
   todayCalls: number;
 }
+
+export interface ModelInput {
+  name: string;
+  providerId: string;
+  alias: string;
+  inputPrice: number;
+  outputPrice: number;
+  context: number;
+  capabilities: ModelCapability[];
+  preferredProviderId: string;
+  status?: ModelStatus;
+}

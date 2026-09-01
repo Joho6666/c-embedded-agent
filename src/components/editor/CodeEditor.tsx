@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useEditor } from "@/lib/stores/editor-store";
 import { useAgent } from "@/lib/stores/agent-store";
 import { cn } from "@/lib/utils";
+import { PatchWhyView } from "@/components/agent/PatchWhy";
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 const DiffEditor = dynamic(() => import("@monaco-editor/react").then((m) => m.DiffEditor), { ssr: false });
@@ -113,6 +114,7 @@ export function CodeEditor() {
           </div>
         </div>
       )}
+      {pending?.why && <PatchWhyView why={pending.why} />}
       <div className="min-h-0 flex-1">
         {!file && tabs.length === 0 ? (
           <div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">没有打开的文件</div>

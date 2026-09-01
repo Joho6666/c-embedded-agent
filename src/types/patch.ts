@@ -1,5 +1,10 @@
 export type PatchStatus = "pending" | "accepted" | "rejected";
 
+export interface PatchWhy {
+  sources: string[];
+  summary: string;
+}
+
 export interface CodePatch {
   id: string;
   runId: string;
@@ -10,4 +15,5 @@ export interface CodePatch {
   reason: string;
   createdAt: string;
   approvalId?: string;
+  why?: PatchWhy;
 }

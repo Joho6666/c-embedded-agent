@@ -15,8 +15,13 @@ export default function WorkspaceLayout({ children }: { children: ReactNode }) {
   const hide =
     pathname === "/agent" ||
     pathname === "/" ||
+    pathname === "/ioc" ||
+    pathname === "/validation" ||
     pathname.startsWith("/projects") ||
-    pathname.startsWith("/settings");
+    pathname.startsWith("/settings") ||
+    pathname.startsWith("/skills") ||
+    pathname.startsWith("/memory") ||
+    pathname.startsWith("/benchmark");
   const context = hide ? null : <PlanViewer plan={plan} />;
   return (
     <AppShell context={context}>

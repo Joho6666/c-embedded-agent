@@ -13,3 +13,9 @@ export function getAgentBackend(): AgentBackend {
 export * from "./client";
 export * from "./contract";
 export * from "./agent";
+export * from "./ioc";
+export * from "./skills";
+export * from "./memory";
+export * from "./validation";
+export * from "./benchmark";
+export * from "./capability";

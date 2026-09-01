@@ -14,6 +14,11 @@ export interface PinConflict {
   requested: PinAssignment;
 }
 
+export interface AgentEvidenceSource {
+  kind: "datasheet" | "rm0008" | "board" | "ioc" | "skill" | "memory";
+  label: string;
+}
+
 export interface HardwareContext {
   vendor: string;
   platform: string;
@@ -35,4 +40,7 @@ export interface HardwareContext {
   serialBaud: number;
   pins: PinAssignment[];
   peripherals: { name: string; count: number }[];
+  iocFilename?: string;
+  hse?: string;
+  evidence?: AgentEvidenceSource[];
 }

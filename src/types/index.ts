@@ -10,3 +10,8 @@ export * from "./knowledge";
 export * from "./tools";
 export * from "./build";
 export * from "./debug";
+export * from "./ioc";
+export * from "./skill";
+export * from "./memory";
+export * from "./benchmark";
+export * from "./hardware-run";

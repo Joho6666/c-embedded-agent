@@ -13,7 +13,12 @@ export function KnowledgeCard({ doc, onOpen }: { doc: KnowledgeDocument; onOpen?
           <h3 className="text-[13px] font-medium">{doc.title}</h3>
           {doc.subtitle && <div className="font-mono text-[11px] text-muted-foreground">{doc.subtitle}</div>}
         </div>
-        <StatusBadge status={doc.indexed ? "success" : "pending"} label={doc.indexed ? "✓ 已索引" : "待索引"} />
+        <div className="flex flex-col items-end gap-1">
+          <StatusBadge status={doc.indexed ? "success" : "pending"} label={doc.indexed ? "✓ 已索引" : "待索引"} />
+          <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-muted-foreground">
+            {doc.origin ?? "official"}
+          </span>
+        </div>
       </div>
       <dl className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">
         <div>来源 {doc.source}</div>

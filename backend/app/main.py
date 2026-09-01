@@ -16,13 +16,17 @@ from app.config.settings import settings
 from app.db import load_run
 from app.tools.compiler import CompileError, compile_project
 from app.tools.detect import gcc_installed, tool_status
+from app.tools.error_memory import get_error, list_errors, record_from_output
 from app.tools.filesystem import list_files, read_file, write_file
 from app.tools.flash import FlashError, flash_elf
 from app.tools.gitutil import restore_snapshot
+from app.tools.hardware_run import run_pipeline
+from app.tools.ioc import parse_ioc
 from app.tools.knowledge import ingest_pdf, retrieve_knowledge
 from app.tools.serialutil import connect as serial_connect
 from app.tools.serialutil import disconnect as serial_disconnect
 from app.tools.serialutil import list_ports, read_available, status as serial_status
+from app.tools.skills import benchmark_wrap, get_skill, list_skills
 from app.workspace.manager import create_project, list_projects, project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
 
@@ -67,6 +71,19 @@ class SerialBody(BaseModel):
     baud: int = 115200
 
 
+class IocBody(BaseModel):
+    content: str
+    filename: str = "project.ioc"
+    name: str | None = None
+
+
+class HardwareRunBody(BaseModel):
+    projectId: str = "default"
+    serialDevice: str | None = None
+    baud: int = 115200
+    expect: str | None = None
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "gcc": "installed" if gcc_installed() else "missing"}
@@ -78,6 +95,91 @@ def metrics() -> dict[str, Any]:
     if not path.is_file():
         return {"gcc": gcc_installed(), "skipped": ["no results.json — run python benchmarks/benchmark.py"]}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/benchmark")
+def benchmark() -> dict[str, Any]:
+    return benchmark_wrap(metrics())
+
+
+@app.get("/api/skills")
+def skills() -> list[dict[str, Any]]:
+    return list_skills()
+
+
+@app.get("/api/skills/{skill_id}")
+def skill_get(skill_id: str) -> dict[str, Any]:
+    item = get_skill(skill_id)
+    if not item:
+        raise HTTPException(404, "skill not found")
+    return item
+
+
+@app.get("/api/memory/errors")
+def memory_errors(q: str = "", tag: str = "") -> list[dict[str, Any]]:
+    return list_errors(q, tag)
+
+
+@app.get("/api/memory/errors/{eid}")
+def memory_error(eid: str) -> dict[str, Any]:
+    item = get_error(eid)
+    if not item:
+        raise HTTPException(404, "error memory not found")
+    return item
+
+
+@app.post("/api/projects/analyze-ioc")
+def analyze_ioc(body: IocBody) -> dict[str, Any]:
+    analysis = parse_ioc(body.content, body.filename)
+    return {"available": True, "analysis": analysis}
+
+
+@app.post("/api/projects/import-ioc")
+def import_ioc(body: IocBody) -> dict[str, Any]:
+    analysis = parse_ioc(body.content, body.filename)
+    name = body.name or Path(body.filename).stem or "CubeMX"
+    meta = create_project(name, analysis.get("mcu") or "STM32F103C8T6", "HAL")
+    root = project_root(meta["id"])
+    (root / body.filename).write_text(body.content, encoding="utf-8")
+    (root / "ioc-analysis.json").write_text(json.dumps(analysis, indent=2), encoding="utf-8")
+    meta["ioc"] = body.filename
+    meta["board"] = analysis.get("board") or meta.get("board")
+    (root / "project.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return {"available": True, "projectId": meta["id"], "analysis": analysis}
+
+
+@app.get("/api/projects/{project_id}/ioc")
+def project_ioc(project_id: str) -> dict[str, Any]:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    cached = root / "ioc-analysis.json"
+    if cached.is_file():
+        return json.loads(cached.read_text(encoding="utf-8"))
+    iocs = list(root.glob("*.ioc"))
+    if not iocs:
+        raise HTTPException(404, "ioc not found")
+    return parse_ioc(iocs[0].read_text(encoding="utf-8"), iocs[0].name)
+
+
+@app.post("/api/hardware/run")
+def hardware_run(body: HardwareRunBody) -> dict[str, Any]:
+    try:
+        root = project_root(body.projectId)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    return run_pipeline(root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect)
+
+
+@app.post("/api/hardware/auto-debug")
+def hardware_auto_debug() -> dict[str, Any]:
+    return {"available": False, "reason": "Backend Not Implemented", "steps": []}
+
+
+@app.get("/api/validation")
+def validation_get() -> dict[str, Any]:
+    raise HTTPException(404, "Backend Not Implemented")
 
 
 @app.get("/api/knowledge")
@@ -165,10 +267,13 @@ def file_put(project_id: str, body: WriteFileBody) -> dict[str, str]:
 @app.post("/api/projects/{project_id}/build")
 def build(project_id: str) -> dict[str, Any]:
     try:
-        return compile_project(project_root(project_id))
+        result = compile_project(project_root(project_id))
+        record_from_output(str(result.get("combined") or ""), success=bool(result.get("success")))
+        return result
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
     except CompileError as e:
+        record_from_output(str(e), success=False)
         return {"success": False, "error": str(e), "diagnostics": [], "artifacts": []}
 
 

@@ -85,7 +85,7 @@ export function CommandPalette() {
               { href: "/serial", label: "串口" },
               { href: "/debug", label: "调试" },
               { href: "/mcu/pins", label: "引脚图" },
-              { href: "/projects/new", label: "新建项目" },
+              { href: "/projects/new", label: "导入 CubeMX" },
             ].map((n) => (
               <Command.Item
                 key={n.href}

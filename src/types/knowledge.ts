@@ -1,3 +1,5 @@
+export type KnowledgeOrigin = "official" | "project" | "user" | "memory" | "skill";
+
 export type KnowledgeSourceType =
   | "datasheet"
   | "reference_manual"
@@ -6,7 +8,12 @@ export type KnowledgeSourceType =
   | "example"
   | "application_note"
   | "errata"
-  | "user_document";
+  | "user_document"
+  | "official"
+  | "project"
+  | "user"
+  | "memory"
+  | "skill";
 
 export interface KnowledgeDocument {
   id: string;
@@ -18,6 +25,7 @@ export interface KnowledgeDocument {
   framework?: string;
   version: string;
   sourceType: KnowledgeSourceType;
+  origin?: KnowledgeOrigin;
   category: "STM32" | "ESP32" | "C Language" | "RTOS";
   url?: string;
   localPath?: string;

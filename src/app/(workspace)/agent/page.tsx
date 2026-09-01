@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { AgentTimeline } from "@/components/agent/AgentTimeline";
 import { TaskInput } from "@/components/agent/TaskInput";
@@ -7,13 +8,20 @@ import { PlanViewer } from "@/components/agent/PlanViewer";
 import { HardwareContextPanel } from "@/components/agent/HardwareContextPanel";
 import { ApprovalCard } from "@/components/agent/ApprovalCard";
 import { ArtifactList } from "@/components/agent/ArtifactList";
+import { ContextInspector } from "@/components/agent/ContextInspector";
 import { FileTree } from "@/components/editor/FileTree";
 import { CodeEditor } from "@/components/editor/CodeEditor";
 import { Button } from "@/components/ui/button";
+import { HardwareRunButton } from "@/components/hardware/HardwareRunButton";
+import { HardwareTimeline } from "@/components/hardware/HardwareTimeline";
+import { DevicePanel } from "@/components/hardware/DevicePanel";
 import { useAgent } from "@/lib/stores/agent-store";
 import { useEditor } from "@/lib/stores/editor-store";
 import { useWorkspaceUI } from "@/lib/stores/workspace-store";
+import { useHardware } from "@/lib/stores/hardware-store";
+import { useProject } from "@/lib/stores/project-store";
 import { goldenPlan } from "@/lib/mock/golden-path";
+import { runAutoDebug } from "@/lib/api/validation";
 
 export default function AgentPage() {
   const events = useAgent((s) => s.events);
@@ -25,6 +33,15 @@ export default function AgentPage() {
   const setView = useWorkspaceUI((s) => s.setAgentView);
   const openFile = useEditor((s) => s.openFile);
   const activeFile = useEditor((s) => s.activeFile);
+  const hw = useHardware((s) => s.hardwareRun);
+  const setHw = useHardware((s) => s.setHardwareRun);
+  const projectId = useProject((s) => s.projectId);
+  const [center, setCenter] = useState<"work" | "hardware">("work");
+  const [autoMsg, setAutoMsg] = useState("");
+
+  const serialFail =
+    !!hw?.steps.some((s) => s.kind === "flash" && s.status === "success") &&
+    !!hw.steps.some((s) => s.kind === "serial" && (s.status === "failed" || s.status === "unavailable"));
 
   return (
     <div className="flex h-full flex-col">
@@ -40,6 +57,10 @@ export default function AgentPage() {
           <Button size="sm" variant={view === "code" ? "default" : "outline"} onClick={() => setView("code")}>
             代码
           </Button>
+          <Button size="sm" variant={center === "hardware" ? "default" : "outline"} onClick={() => setCenter(center === "hardware" ? "work" : "hardware")}>
+            Hardware
+          </Button>
+          <HardwareRunButton />
           <Button size="sm" variant="outline" onClick={() => void start()}>
             STM32 LED 演示
           </Button>
@@ -62,7 +83,31 @@ export default function AgentPage() {
         <Panel defaultSize="54" minSize="36">
           <div className="flex h-full flex-col">
             <div className="min-h-0 flex-1 overflow-auto">
-              {view === "code" ? (
+              {center === "hardware" ? (
+                <div className="p-3">
+                  <div className="mb-2 text-[11px] text-muted-foreground">Hardware Timeline</div>
+                  <HardwareTimeline result={hw} />
+                  {serialFail && (
+                    <div className="mt-3 rounded-md border border-error/40 bg-error/10 p-2 text-[12px]">
+                      Hardware Validation Failed · USART 未初始化 / GPIO AF / Baud / Clock
+                      <div className="mt-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            void runAutoDebug(projectId).then((r) => {
+                              if (!r.available) setAutoMsg(r.reason ?? "Backend Not Implemented");
+                              else setHw(r);
+                            });
+                          }}
+                        >
+                          Run Auto Debug
+                        </Button>
+                        {autoMsg && <div className="mt-1 text-[11px]">{autoMsg}</div>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : view === "code" ? (
                 <CodeEditor />
               ) : (
                 <div className="p-3">
@@ -76,6 +121,8 @@ export default function AgentPage() {
         <Separator className="w-px bg-border" />
         <Panel defaultSize="28" minSize="18">
           <div className="h-full overflow-auto">
+            <ContextInspector />
+            <DevicePanel />
             <HardwareContextPanel />
             <ApprovalCard />
             <PlanViewer plan={plan} />

@@ -47,7 +47,13 @@ make clean && make -j4
 
 或设置 `CEA_TOOLCHAIN_PATH`。官方模板已在本机用 ARM GCC 13.3 真实链接出 `firmware.elf/.hex/.bin`（Flash text+data ≈ 2.9KB）。
 
-Golden 回归夹具：`examples/golden/stm32f103_led/`（`python examples/golden/sync_led.py`）。
+Golden 回归夹具：
+
+- LED PC13：`examples/golden/stm32f103_led/`
+- USART1 115200 PA9/PA10：`examples/golden/stm32f103_usart/`
+- TIM2 PWM PA0：`examples/golden/stm32f103_pwm/`
+
+刷新外设黄金工程：`python examples/golden/sync_overlay.py all`
 
 ## Agent 规则
 

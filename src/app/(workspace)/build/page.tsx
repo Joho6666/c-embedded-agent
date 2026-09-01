@@ -8,12 +8,14 @@ import { useTerminal } from "@/lib/stores/terminal-store";
 import { useLive } from "@/lib/stores/live-store";
 import { useProject } from "@/lib/stores/project-store";
 import { API_BASE } from "@/lib/api/client";
+import { Button } from "@/components/ui/button";
 
 export default function BuildPage() {
   const lines = useTerminal((s) => s.buildLines);
   const live = useLive((s) => s.mode === "live");
   const projectId = useProject((s) => s.projectId);
   const [arts, setArts] = useState<Array<{ name: string; size: number }>>([]);
+  const [flashHint, setFlashHint] = useState("");
 
   useEffect(() => {
     if (!live) return;
@@ -27,6 +29,22 @@ export default function BuildPage() {
     <div className="flex h-full flex-col p-5">
       <h1 className="mb-4 text-[18px] font-semibold">构建</h1>
       <BuildStatus build={latestBuild} />
+      {live && (
+        <div className="mb-3">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              const r = await fetch(`${API_BASE}/api/projects/${projectId}/flash`, { method: "POST" });
+              const body = await r.text();
+              setFlashHint(r.ok ? "Flash 已提交" : `Flash 失败：${body.slice(0, 180)}`);
+            }}
+          >
+            Flash (OpenOCD ST-Link)
+          </Button>
+          {flashHint ? <span className="ml-2 text-[12px] text-muted-foreground">{flashHint}</span> : null}
+        </div>
+      )}
       {arts.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {arts.map((a) => (

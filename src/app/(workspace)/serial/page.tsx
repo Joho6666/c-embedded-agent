@@ -20,6 +20,18 @@ export default function SerialPage() {
   const [device, setDevice] = useState("COM3");
   const [baud, setBaud] = useState(115200);
   const [hint, setHint] = useState("");
+  const [liveSerial, setLiveSerial] = useState<{ text: string }[]>([]);
+
+  useEffect(() => {
+    if (mode !== "live") return;
+    const poll = window.setInterval(() => {
+      void fetch(`${API_BASE}/api/serial/lines`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((rows: Array<{ text: string }>) => setLiveSerial(rows))
+        .catch(() => undefined);
+    }, 500);
+    return () => window.clearInterval(poll);
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== "live") return;
@@ -73,7 +85,17 @@ export default function SerialPage() {
         <p className="mb-3 text-[12px] text-muted-foreground">DEMO · COM3 · 115200</p>
       )}
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border">
-        <SerialMonitor lines={liveLines.length ? liveLines : serialLog} port={device} baud={baud} />
+        <SerialMonitor
+          lines={
+            liveSerial.length
+              ? liveSerial.map((l, i) => ({ ts: String(i).padStart(2, "0"), text: l.text }))
+              : liveLines.length
+                ? liveLines
+                : serialLog
+          }
+          port={device}
+          baud={baud}
+        />
       </div>
     </div>
   );

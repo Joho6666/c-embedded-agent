@@ -4,6 +4,9 @@ import { useEffect } from "react";
 import { useWorkspaceUI } from "@/lib/stores/workspace-store";
 import { useEditor } from "@/lib/stores/editor-store";
 import { useTerminal } from "@/lib/stores/terminal-store";
+import { useLive } from "@/lib/stores/live-store";
+import { useProject } from "@/lib/stores/project-store";
+import { compileProject } from "@/lib/api/build";
 
 export function KeyboardShortcuts() {
   const toggleBottom = useWorkspaceUI((s) => s.toggleBottom);
@@ -21,7 +24,16 @@ export function KeyboardShortcuts() {
       if (meta && e.key.toLowerCase() === "b") {
         e.preventDefault();
         setBottomTab("build");
-        appendTerminal(["$ make -j8"]);
+        if (useLive.getState().mode !== "live") {
+          appendTerminal(["Backend capability unavailable"]);
+        } else {
+          const id = useProject.getState().projectId;
+          appendTerminal([`$ make -j4  (${id})`]);
+          void compileProject(id).then((r) => {
+            if (r.combined) appendTerminal(r.combined.split("\n").slice(-40));
+            appendTerminal([r.success ? "exit 0" : `build failed ${r.error ?? ""}`.trim()]);
+          });
+        }
       }
       if (meta && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();

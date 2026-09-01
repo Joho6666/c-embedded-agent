@@ -11,16 +11,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.agent.runtime import RUNS, AgentRun, event_stream, request_stop, run_agent
+from app.agent.runtime import RUNS, AgentRun, event_stream, request_stop, resolve_approval, run_agent
 from app.config.settings import settings
-from app.db import load_run
+from app.db import list_runs, load_run
 from app.tools.compiler import CompileError, compile_project
 from app.tools.detect import gcc_installed, tool_status
 from app.tools.error_memory import get_error, list_errors, record_from_output
 from app.tools.filesystem import list_files, read_file, write_file
 from app.tools.flash import FlashError, flash_elf
 from app.tools.gitutil import restore_snapshot
-from app.tools.hardware_run import run_pipeline
+from app.tools.hardware_run import auto_debug, run_pipeline
 from app.tools.ioc import parse_ioc
 from app.tools.knowledge import ingest_pdf, retrieve_knowledge
 from app.tools.serialutil import connect as serial_connect
@@ -45,8 +45,16 @@ class CreateRunBody(BaseModel):
     project_id: str = Field(alias="projectId", default="default")
     mode: str = "auto"
     goldenPath: bool = False
+    serialDevice: str | None = None
+    baud: int = 115200
+    expect: str | None = None
 
     model_config = {"populate_by_name": True}
+
+
+class ApproveBody(BaseModel):
+    approvalId: str | None = None
+    decision: str = "approved"
 
 
 class CreateProjectBody(BaseModel):
@@ -173,8 +181,12 @@ def hardware_run(body: HardwareRunBody) -> dict[str, Any]:
 
 
 @app.post("/api/hardware/auto-debug")
-def hardware_auto_debug() -> dict[str, Any]:
-    return {"available": False, "reason": "Backend Not Implemented", "steps": []}
+def hardware_auto_debug(body: HardwareRunBody) -> dict[str, Any]:
+    try:
+        root = project_root(body.projectId)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    return auto_debug(root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect)
 
 
 @app.get("/api/validation")
@@ -319,9 +331,23 @@ def flash(project_id: str) -> dict[str, Any]:
 async def create_run(body: CreateRunBody) -> dict[str, str]:
     rid = f"run-{uuid.uuid4().hex[:10]}"
     run = AgentRun(rid, body.project_id, body.prompt, body.mode)
+    run.serial_device = body.serialDevice
+    run.serial_baud = body.baud
+    run.expect = body.expect
     RUNS[rid] = run
     run.task = asyncio.create_task(run_agent(run))
     return {"id": rid, "run_id": rid}
+
+
+@app.get("/api/runs")
+def runs_list() -> list[dict[str, Any]]:
+    live = [
+        {"id": r.id, "project_id": r.project_id, "prompt": r.prompt, "status": r.status, "iteration": r.iteration}
+        for r in RUNS.values()
+    ]
+    stored = list_runs()
+    seen = {x["id"] for x in live}
+    return live + [s for s in stored if s.get("id") not in seen]
 
 
 @app.get("/api/runs/{run_id}")
@@ -363,10 +389,13 @@ def undo(run_id: str) -> dict[str, str]:
 
 
 @app.post("/api/runs/{run_id}/approve")
-async def approve(run_id: str) -> dict[str, str]:
-    if run_id not in RUNS:
+async def approve(run_id: str, body: ApproveBody | None = None) -> dict[str, str]:
+    run = RUNS.get(run_id)
+    if not run:
         raise HTTPException(404, "run not found")
-    return {"ok": "1"}
+    decision = (body.decision if body else "approved") or "approved"
+    resolve_approval(run, decision)
+    return {"ok": "1", "decision": run.approval_decision}
 
 
 @app.post("/api/agent/runs")

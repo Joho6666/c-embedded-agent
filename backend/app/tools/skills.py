@@ -26,6 +26,45 @@ def get_skill(sid: str) -> dict[str, Any] | None:
     return None
 
 
+_SKILL_KEYS: list[tuple[str, tuple[str, ...]]] = [
+    ("usart-dma", ("usart dma", "uart dma", "dma uart")),
+    ("usart", ("usart", "uart", "串口")),
+    ("pwm", ("pwm",)),
+    ("tim", ("tim2", "tim3", "定时器", "timer")),
+    ("adc-dma", ("adc dma",)),
+    ("adc", ("adc",)),
+    ("i2c", ("i2c", "eeprom")),
+    ("spi", ("spi",)),
+    ("exti", ("exti", "中断")),
+    ("gpio", ("led", "gpio", "blink", "闪")),
+    ("freertos", ("freertos", "rtos")),
+]
+
+
+def match_skills(prompt: str) -> list[dict[str, Any]]:
+    p = prompt.lower()
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for sid, keys in _SKILL_KEYS:
+        if any(k in p for k in keys) and sid not in seen:
+            item = get_skill(sid)
+            if item:
+                out.append(item)
+                seen.add(sid)
+    return out
+
+
+def skill_summary(skill: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": skill.get("id"),
+        "name": skill.get("name"),
+        "capabilities": skill.get("capabilities") or [],
+        "validators": [v.get("label") for v in (skill.get("validators") or [])],
+        "knownErrors": [e.get("pattern") for e in (skill.get("knownErrors") or [])],
+        "goldenExamples": [g.get("title") for g in (skill.get("goldenExamples") or [])],
+    }
+
+
 def benchmark_wrap(raw: dict[str, Any]) -> dict[str, Any]:
     skipped = raw.get("skipped") if isinstance(raw.get("skipped"), list) else []
     compile_r = raw.get("compile_success_rate")

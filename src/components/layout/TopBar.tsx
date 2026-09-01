@@ -11,6 +11,7 @@ import { useTerminal } from "@/lib/stores/terminal-store";
 import { useWorkspaceUI } from "@/lib/stores/workspace-store";
 import { agentStatusLabel } from "@/lib/i18n";
 import { useLive } from "@/lib/stores/live-store";
+import { compileProject } from "@/lib/api/build";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 
@@ -84,7 +85,15 @@ export function TopBar() {
         <Button
           onClick={() => {
             setBottomTab("build");
-            appendTerminal(["$ make -j8"]);
+            if (liveMode !== "live") {
+              appendTerminal(["Backend capability unavailable"]);
+              return;
+            }
+            appendTerminal([`$ make -j4  (${projectId})`]);
+            void compileProject(projectId).then((r) => {
+              if (r.combined) appendTerminal(r.combined.split("\n").slice(-40));
+              appendTerminal([r.success ? "exit 0" : `build failed ${r.error ?? r.exit_code ?? ""}`.trim()]);
+            });
           }}
           title="Ctrl+B"
         >

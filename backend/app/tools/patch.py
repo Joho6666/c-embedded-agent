@@ -24,6 +24,10 @@ def apply_patch(root: Path, rel: str, patch: str, *, advanced: bool = False) -> 
     return new
 
 
+def preview_patch(original: str, patch: str) -> str:
+    return _apply_unified(original, patch)
+
+
 def _apply_unified(original: str, patch: str) -> str:
     src = original.splitlines()
     ended_nl = original.endswith("\n")

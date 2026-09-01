@@ -20,6 +20,9 @@ export interface CreateRunInput {
   prompt: string;
   mode: AgentMode;
   goldenPath?: boolean;
+  serialDevice?: string;
+  baud?: number;
+  expect?: string;
 }
 
 export interface AgentRun {

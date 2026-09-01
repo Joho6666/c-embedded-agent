@@ -161,6 +161,15 @@ def save_model_call(
         )
 
 
+def list_runs(limit: int = 50) -> list[dict[str, Any]]:
+    with connect() as con:
+        rows = con.execute(
+            "SELECT id, project_id, prompt, status, iteration, model, started_at, finished_at FROM runs ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def load_run(run_id: str) -> dict[str, Any] | None:
     with connect() as con:
         row = con.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()

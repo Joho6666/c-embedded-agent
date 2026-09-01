@@ -172,11 +172,15 @@ export const useAgent = create<AgentState>()(
           }
           useTerminal.getState().appendTerminal(["$ live mode: POST /api/runs"]);
         }
+        const hw = useHardware.getState().context;
         const run = await backend.createRun({
           projectId,
           prompt: get().prompt || DEMO_PROMPT,
           mode: get().mode,
           goldenPath: !live,
+          serialDevice: live && hw.serialPort ? hw.serialPort : undefined,
+          baud: hw.serialBaud,
+          expect: /hello/i.test(get().prompt) ? "Hello" : undefined,
         });
         const unsub = backend.subscribeEvents(run.id, (event) => {
           if (event.description !== "__run_end__" && event.type !== "run_stopped") applyEvent(event);
@@ -209,17 +213,32 @@ export const useAgent = create<AgentState>()(
               event.type === "validation"
                 ? [
                     ...s.validations,
-                    {
-                      id: event.id,
-                      runId: event.runId,
-                      requirement: "LED 每500ms翻转",
-                      method: "Serial Timestamp",
-                      expected: "500ms",
-                      observed: "499–501ms",
-                      tolerance: "±2ms",
-                      status: event.status === "success" ? ("pass" as const) : ("fail" as const),
-                      evidence: event.description,
-                    },
+                    (() => {
+                      let parsed: { method?: string; expected?: string; observed?: string; status?: string } = {};
+                      try {
+                        parsed = JSON.parse(event.description || "{}") as typeof parsed;
+                      } catch {
+                        parsed = {};
+                      }
+                      const method = parsed.method || "static_source";
+                      const status =
+                        parsed.status === "pass" || event.status === "success"
+                          ? ("pass" as const)
+                          : parsed.status === "unknown"
+                            ? ("unknown" as const)
+                            : ("fail" as const);
+                      return {
+                        id: event.id,
+                        runId: event.runId,
+                        requirement: event.title,
+                        method,
+                        expected: parsed.expected || "static source checks",
+                        observed: parsed.observed || event.description || "",
+                        status,
+                        evidence: event.description,
+                        confidence: null,
+                      };
+                    })(),
                   ]
                 : s.validations;
             const rail =

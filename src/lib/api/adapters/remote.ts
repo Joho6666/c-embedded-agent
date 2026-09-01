@@ -13,6 +13,9 @@ export function createRemoteAgentBackend(): AgentBackend {
           prompt: input.prompt,
           projectId: input.projectId,
           mode: input.mode,
+          serialDevice: input.serialDevice,
+          baud: input.baud,
+          expect: input.expect,
         }),
       });
       const run: AgentRun = {
@@ -34,7 +37,7 @@ export function createRemoteAgentBackend(): AgentBackend {
         method: "POST",
         body: JSON.stringify({ approvalId, decision }),
       }),
-    listRuns: async () => [],
+    listRuns: async () => apiFetch(API_ROUTES.runs),
     getRun: (id) => apiFetch<AgentRun>(API_ROUTES.run(id)),
     subscribeEvents(runId: string, onEvent: EventListener) {
       const es = new EventSource(`${API_BASE}${API_ROUTES.events(runId)}`);

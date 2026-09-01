@@ -28,6 +28,7 @@ export function HardwareRunButton() {
           projectId,
           serialDevice: ctx.serialPort || undefined,
           baud: ctx.serialBaud,
+          expect: "Hello",
         })
           .then(setRun)
           .finally(() => setBusy(false));

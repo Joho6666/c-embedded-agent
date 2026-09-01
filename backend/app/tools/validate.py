@@ -31,3 +31,47 @@ def validate_led_task(root: Path, pin: str = "PC13") -> dict[str, Any]:
     }
     score = int(100 * sum(1 for v in checks.values() if v) / len(checks))
     return {"task": "led", "pin": pin, "checks": checks, "score": score, "passed": score == 100}
+
+
+def core_source_text(root: Path) -> str:
+    blobs = []
+    for rel in list_files(root):
+        if rel.endswith((".c", ".h")) and "Drivers/" not in rel:
+            try:
+                blobs.append(read_file(root, rel))
+            except OSError:
+                continue
+    return "\n".join(blobs)
+
+
+def inspect_usart(root: Path) -> dict[str, Any]:
+    text = core_source_text(root)
+    try:
+        mk = read_file(root, "Makefile")
+    except FileNotFoundError:
+        mk = ""
+    try:
+        conf = read_file(root, "Core/Inc/stm32f1xx_hal_conf.h")
+    except FileNotFoundError:
+        conf = ""
+    checks = {
+        "usart_clock": "__HAL_RCC_USART1_CLK_ENABLE" in text,
+        "gpioa_clock": "__HAL_RCC_GPIOA_CLK_ENABLE" in text,
+        "hal_uart_init": "HAL_UART_Init" in text,
+        "baud_115200": "115200" in text,
+        "pa9": "GPIO_PIN_9" in text,
+        "pa10": "GPIO_PIN_10" in text,
+        "uart_source": "stm32f1xx_hal_uart.c" in mk,
+        "uart_module": "HAL_UART_MODULE_ENABLED" in conf and not _commented_macro(conf, "HAL_UART_MODULE_ENABLED"),
+    }
+    score = int(100 * sum(1 for v in checks.values() if v) / len(checks))
+    missing = [k for k, v in checks.items() if not v]
+    return {"task": "usart", "checks": checks, "score": score, "passed": score == 100, "missing": missing}
+
+
+def _commented_macro(conf: str, macro: str) -> bool:
+    import re
+
+    if re.search(rf"^\s*#define\s+{re.escape(macro)}\s*$", conf, re.M):
+        return False
+    return True

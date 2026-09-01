@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from app.tools.compiler import CompileError, compile_project
-from app.tools.error_memory import record_from_output
+from app.tools.error_memory import apply_known_fix, list_errors, mark_fix_result, record_from_output
 from app.tools.flash import FlashError, detect_chip_id, flash_elf
 from app.tools.serialutil import connect as serial_connect
 from app.tools.serialutil import disconnect as serial_disconnect
 from app.tools.serialutil import read_available, status as serial_status
-from app.tools.validate import validate_led_task
+from app.tools.validate import inspect_usart, validate_led_task
 
 
 def _step(kind: str, title: str, status: str, detail: str = "", logs: str = "", reason: str = "") -> dict[str, Any]:
@@ -167,3 +167,96 @@ def json_safe(obj: Any) -> str:
 
 def _unknown_val() -> dict[str, Any]:
     return {"expected": "", "actual": "", "status": "unknown", "confidence": None}
+
+
+def sample_serial(device: str, baud: int = 115200, seconds: float = 2.0) -> dict[str, Any]:
+    serial_connect(device, baud)
+    try:
+        deadline = time.time() + seconds
+        lines: list[str] = []
+        while time.time() < deadline:
+            rows = read_available()
+            lines = [r.get("text") or "" for r in rows if r.get("text")]
+            time.sleep(0.2)
+        st = serial_status()
+        return {"device": st.get("device") or device, "baud": baud, "lines": lines}
+    finally:
+        try:
+            serial_disconnect()
+        except Exception:
+            pass
+
+
+def auto_debug(
+    root: Path,
+    *,
+    serial_device: str | None = None,
+    baud: int = 115200,
+    expect: str | None = None,
+) -> dict[str, Any]:
+    steps: list[dict[str, Any]] = []
+    usart = inspect_usart(root)
+    steps.append(
+        _step(
+            "autodebug",
+            "Inspect USART / Clock / Pin",
+            "success" if usart.get("passed") else "failed",
+            f"score={usart.get('score')} missing={usart.get('missing')}",
+            json_safe(usart),
+        )
+    )
+    applied: list[str] = []
+    for mid in usart.get("missing") or []:
+        eid = None
+        if mid in {"uart_source", "uart_module", "hal_uart_init"}:
+            eid = "hal-uart-init-undef"
+        if not eid:
+            continue
+        hits = list_errors(eid.replace("-", " "))
+        steps.append(
+            _step(
+                "memory_match",
+                "Error Memory",
+                "success" if hits else "unavailable",
+                hits[0]["pattern"] if hits else "no memory hit",
+                json_safe(hits[:3]),
+            )
+        )
+        fix = apply_known_fix(root, eid)
+        if fix.get("applied"):
+            applied.append(eid)
+            steps.append(_step("autodebug", f"Apply {eid}", "success", ",".join(fix.get("files") or []), json_safe(fix)))
+        else:
+            steps.append(_step("autodebug", f"Apply {eid}", "unavailable", fix.get("reason") or "not applied", json_safe(fix)))
+
+    pipeline = run_pipeline(root, serial_device=serial_device, baud=baud, expect=expect)
+    for eid in applied:
+        ok = bool(pipeline.get("steps") and pipeline["steps"][0].get("status") == "success")
+        mark_fix_result(eid, success=ok)
+
+    serial_fail = any(s.get("kind") == "serial" and s.get("status") in {"failed", "unavailable"} for s in pipeline.get("steps") or [])
+    flash_ok = any(s.get("kind") == "flash" and s.get("status") == "success" for s in pipeline.get("steps") or [])
+    extra = list(steps) + list(pipeline.get("steps") or [])
+    val = pipeline.get("validation") or _unknown_val()
+    if flash_ok and serial_fail:
+        val = {
+            "expected": expect or "USART output",
+            "actual": "no serial output after auto-debug",
+            "status": "fail",
+            "confidence": None,
+        }
+        extra.append(
+            _step(
+                "validate",
+                "Hardware Validation Failed",
+                "failed",
+                "Possible Causes: USART 未初始化 / GPIO AF / Baud / Clock",
+                reason="still no serial evidence",
+            )
+        )
+    return {
+        "available": True,
+        "runId": pipeline.get("runId") or f"ad-{uuid.uuid4().hex[:8]}",
+        "steps": extra,
+        "validation": val,
+    }

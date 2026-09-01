@@ -9,9 +9,9 @@ import { ProjectCard } from "@/components/project/ProjectCard";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { ReliabilityPanel } from "@/components/dashboard/ReliabilityPanel";
 import { ProjectHealth } from "@/components/dashboard/ProjectHealth";
-import { projects } from "@/lib/mock/projects";
-import { historyTasks } from "@/lib/mock/build";
 import { useAgent } from "@/lib/stores/agent-store";
+import { listProjects } from "@/lib/api/project";
+import type { Project } from "@/types/project";
 import { useLive } from "@/lib/stores/live-store";
 import { getBenchmarkDashboard } from "@/lib/api/benchmark";
 import { listErrorMemories } from "@/lib/api/memory";
@@ -27,11 +27,18 @@ export default function DashboardPage() {
   const [bench, setBench] = useState<BenchmarkSummary | null>(null);
   const [memories, setMemories] = useState<ErrorMemoryEntry[]>([]);
   const [tools, setTools] = useState<string>("Not Tested");
+  const [recentProjects, setRecentProjects] = useState<Project[]>([]);
+  const [recentRuns, setRecentRuns] = useState<Array<{ id: string; prompt?: string; status?: string; started_at?: string }>>([]);
 
   useEffect(() => {
     if (mode !== "live") return;
     void getBenchmarkDashboard().then(setBench);
     void listErrorMemories().then((r) => setMemories(r.available ? r.items.slice(0, 4) : []));
+    void listProjects().then((rows) => setRecentProjects(rows.slice(0, 3)));
+    void fetch(`${API_BASE}/api/runs`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: Array<{ id: string; prompt?: string; status?: string; started_at?: string }>) => setRecentRuns(Array.isArray(d) ? d.slice(0, 8) : []))
+      .catch(() => setRecentRuns([]));
     void fetch(`${API_BASE}/api/tools/status`)
       .then((r) => (r.ok ? r.json() : []))
       .then((rows: Array<{ id: string; installed?: boolean }>) => {
@@ -102,23 +109,27 @@ export default function DashboardPage() {
 
       <h2 className="mt-7 text-[13px] font-medium">Recent Projects</h2>
       <div className="mt-2 grid gap-2 md:grid-cols-3">
-        {projects.slice(1, 4).map((p) => (
-          <ProjectCard key={p.id} project={p} />
-        ))}
+        {recentProjects.length === 0 ? (
+          <div className="text-[12px] text-muted-foreground">无项目</div>
+        ) : (
+          recentProjects.map((p) => <ProjectCard key={p.id} project={p} />)
+        )}
       </div>
       <h2 className="mt-7 text-[13px] font-medium">Recent Agent Runs</h2>
       <div className="mt-2 divide-y divide-border overflow-hidden rounded-md border border-border bg-panel">
-        {historyTasks.map((t) => (
-          <Link key={t.id} href="/agent" className="flex items-center justify-between px-3 py-2.5 hover:bg-accent/40">
-            <div>
-              <div className="text-[13px]">{t.title}</div>
-              <div className="text-[11px] text-muted-foreground">
-                {t.projectName} · {t.createdAt}
+        {recentRuns.length === 0 ? (
+          <div className="px-3 py-2.5 text-[12px] text-muted-foreground">无记录</div>
+        ) : (
+          recentRuns.map((t) => (
+            <Link key={t.id} href="/agent" className="flex items-center justify-between px-3 py-2.5 hover:bg-accent/40">
+              <div>
+                <div className="text-[13px]">{t.prompt || t.id}</div>
+                <div className="text-[11px] text-muted-foreground">{t.started_at || ""}</div>
               </div>
-            </div>
-            <StatusBadge status={t.status} label={t.status === "working" ? "● 进行中" : "✓ 完成"} />
-          </Link>
-        ))}
+              <StatusBadge status={t.status || "idle"} />
+            </Link>
+          ))
+        )}
       </div>
       <h2 className="mt-7 text-[13px] font-medium">Weakest Skills / Error Memories / Benchmark Trend</h2>
       <div className="mt-2 grid gap-2 md:grid-cols-3">

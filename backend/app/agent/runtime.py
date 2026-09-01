@@ -19,11 +19,16 @@ from app.tools.compiler import CompileError, compile_project_streaming
 from app.tools.filesystem import list_files, read_file, write_file
 from app.tools.gitutil import snapshot
 from app.tools.knowledge import format_citation, retrieve_knowledge
-from app.tools.patch import PatchError, apply_patch
+from app.tools.patch import PatchError, apply_patch, preview_patch
 from app.tools.search import search_code
-from app.tools.validate import validate_led_task
+from app.tools.error_memory import apply_known_fix, list_errors, mark_fix_result, record_from_output
+from app.tools.flash import FlashError, flash_elf
+from app.tools.hardware_run import run_pipeline, sample_serial
+from app.tools.skills import get_skill, skill_summary
+from app.tools.validate import inspect_usart, validate_led_task
 from app.workspace.manager import project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
+from app.agent.context import led_from_ioc, load_ioc_analysis
 
 SYSTEM = """你是一名资深嵌入式 C 工程师，目标是让 STM32F103C8T6 HAL 工程真实编译链接。
 规则：
@@ -52,6 +57,12 @@ TOOLS = [
     {"type": "function", "function": {"name": "retrieve_knowledge", "description": "检索 STM32 知识库", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "get_mcu_info", "description": "STM32F103C8T6 结构化信息", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "get_pin_info", "description": "查询引脚复用", "parameters": {"type": "object", "properties": {"pin": {"type": "string"}}, "required": ["pin"]}}},
+    {"type": "function", "function": {"name": "flash_firmware", "description": "用 OpenOCD ST-Link 烧录 firmware.elf。无调试器时返回失败，不要假装成功。", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "serial_read", "description": "打开串口采样约 2 秒。baud 仅 9600 或 115200。", "parameters": {"type": "object", "properties": {"device": {"type": "string"}, "baud": {"type": "integer"}, "expect": {"type": "string"}}, "required": ["device"]}}},
+    {"type": "function", "function": {"name": "run_on_device", "description": "Build→Flash→Serial→Validate。无板/无串口标 unavailable。", "parameters": {"type": "object", "properties": {"device": {"type": "string"}, "baud": {"type": "integer"}, "expect": {"type": "string"}}}}},
+    {"type": "function", "function": {"name": "load_skill", "description": "加载外设 Skill 摘要（USART/DMA/TIM…）", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
+    {"type": "function", "function": {"name": "search_error_memory", "description": "搜索已知编译/链接错误修复", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "tag": {"type": "string"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "apply_error_memory_fix", "description": "仅应用已知机械修复（Makefile HAL UART/TIM source）。", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
 ]
 
 
@@ -75,6 +86,12 @@ class AgentRun:
         self.citations: list[dict[str, Any]] = []
         self.snapshot_sha = ""
         self.advanced = mode == "advanced"
+        self.approval_event = asyncio.Event()
+        self.approval_decision = "approved"
+        self.serial_device: str | None = None
+        self.serial_baud = 115200
+        self.expect: str | None = None
+        self.loaded_skills: list[dict[str, Any]] = []
 
     def cancelled(self) -> bool:
         return self.cancel_event.is_set() or self.status == "cancelled"
@@ -111,6 +128,8 @@ async def event_stream(run_id: str) -> AsyncIterator[str]:
 
 async def request_stop(run: AgentRun) -> None:
     run.cancel_event.set()
+    run.approval_decision = "rejected"
+    run.approval_event.set()
     run.status = "cancelled"
     if run.task and not run.task.done():
         run.task.cancel()
@@ -121,6 +140,13 @@ async def request_stop(run: AgentRun) -> None:
     run.emit(type="run_stopped", status="cancelled", title="已停止")
     run.queue.put_nowait(None)
     finish_run(run.id, "cancelled", run.iteration)
+
+
+def resolve_approval(run: AgentRun, decision: str) -> None:
+    run.approval_decision = decision if decision in {"approved", "rejected", "once", "always"} else "rejected"
+    if run.approval_decision in {"once", "always"}:
+        run.approval_decision = "approved"
+    run.approval_event.set()
 
 
 def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun) -> str:
@@ -138,7 +164,46 @@ def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun) -> st
         return json.dumps(get_mcu_info(), ensure_ascii=False)
     if name == "get_pin_info":
         return json.dumps(get_pin_info(str(args.get("pin", ""))), ensure_ascii=False)
+    if name == "load_skill":
+        item = get_skill(str(args.get("id", "")))
+        if not item:
+            return json.dumps({"available": False, "reason": "skill not found"})
+        run.loaded_skills.append(item)
+        run.emit(type="tool_call", status="success", title=f"Load Skill {item.get('name')}", description=json.dumps(skill_summary(item), ensure_ascii=False)[:800])
+        return json.dumps(skill_summary(item), ensure_ascii=False)
+    if name == "search_error_memory":
+        hits = list_errors(str(args.get("query", "")), str(args.get("tag", "") or ""))
+        run.emit(
+            type="tool_call",
+            status="success" if hits else "failed",
+            title="Searching Error Memory",
+            description=json.dumps([{"id": h["id"], "pattern": h["pattern"]} for h in hits[:5]], ensure_ascii=False),
+        )
+        return json.dumps(hits[:8], ensure_ascii=False)
+    if name == "apply_error_memory_fix":
+        eid = str(args.get("id", ""))
+        fix = apply_known_fix(root, eid)
+        run.emit(
+            type="file_diff" if fix.get("applied") else "tool_call",
+            status="success" if fix.get("applied") else "failed",
+            title=f"Apply Fix {eid}",
+            files=fix.get("files") or [],
+            description=json.dumps(fix, ensure_ascii=False)[:800],
+        )
+        return json.dumps(fix, ensure_ascii=False)
     return f"unknown tool {name}"
+
+
+async def _await_approval(run: AgentRun, approval_id: str) -> str:
+    run.approval_event.clear()
+    run.approval_decision = "pending"
+    try:
+        await asyncio.wait_for(run.approval_event.wait(), timeout=3600)
+    except TimeoutError:
+        return "rejected"
+    if run.cancelled():
+        return "RUN_STOPPED"
+    return run.approval_decision
 
 
 async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str) -> str:
@@ -149,10 +214,11 @@ async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str) -
         before = read_file(root, path)
     except FileNotFoundError:
         before = ""
-    write_file(root, path, content, advanced=run.advanced)
+    approval_id = uuid.uuid4().hex[:10]
+    gated = run.mode == "code"
     run.emit(
         type="file_diff",
-        status="success" if run.mode == "auto" else "waiting_approval",
+        status="waiting_approval" if gated else "success",
         title="写入文件",
         files=[path if path.startswith("/") else f"/{path}"],
         original=before[:8000],
@@ -160,8 +226,14 @@ async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str) -
         path=path,
         before=before[:8000],
         after=content[:8000],
-        requiresApproval=run.mode == "code",
+        requiresApproval=gated,
+        approvalId=approval_id if gated else None,
     )
+    if gated:
+        decision = await _await_approval(run, approval_id)
+        if decision in {"rejected", "RUN_STOPPED", "pending"}:
+            return "rejected" if decision != "RUN_STOPPED" else decision
+    write_file(root, path, content, advanced=run.advanced)
     save_file_change(run.id, path, before, content)
     return "ok"
 
@@ -171,21 +243,32 @@ async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str) -> 
         return "RUN_STOPPED"
     before = read_file(root, path)
     try:
-        after = apply_patch(root, path, patch, advanced=run.advanced)
+        proposed = preview_patch(before, patch)
     except PatchError as e:
         return str(e)
+    gated = run.mode == "code"
+    approval_id = uuid.uuid4().hex[:10]
     run.emit(
         type="file_diff",
-        status="success" if run.mode == "auto" else "waiting_approval",
+        status="waiting_approval" if gated else "success",
         title="应用补丁",
         files=[path if path.startswith("/") else f"/{path}"],
         original=before[:8000],
-        proposed=after[:8000],
+        proposed=proposed[:8000],
         path=path,
         before=before[:8000],
-        after=after[:8000],
-        requiresApproval=run.mode == "code",
+        after=proposed[:8000],
+        requiresApproval=gated,
+        approvalId=approval_id if gated else None,
     )
+    if gated:
+        decision = await _await_approval(run, approval_id)
+        if decision in {"rejected", "RUN_STOPPED", "pending"}:
+            return "rejected" if decision != "RUN_STOPPED" else decision
+    try:
+        after = apply_patch(root, path, patch, advanced=run.advanced)
+    except PatchError as e:
+        return str(e)
     save_file_change(run.id, path, before, after)
     return "ok"
 
@@ -195,7 +278,20 @@ async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
         run.emit(type="terminal", status="running", title="make", stream=stream, content=line, output=line)
 
     result = await compile_project_streaming(root, on_line)
+    combined = str(result.get("combined") or "")
+    hits = record_from_output(combined, success=bool(result.get("success")))
     run.last_errors = [d for d in result.get("diagnostics") or [] if d.get("severity") == "error"]
+    if not result.get("success") and hits:
+        memories = [list_errors(eid) for eid in hits]
+        flat = [m for group in memories for m in group]
+        run.emit(
+            type="tool_call",
+            status="success",
+            title="Memory Match",
+            description=json.dumps([{"id": h, "pattern": (flat[0]["pattern"] if flat else h)} for h in hits], ensure_ascii=False),
+        )
+        for h in hits:
+            run.last_errors.append({"source": "memory", "file": "", "line": 0, "severity": "error", "message": f"error memory {h}"})
     diags = [
         {
             "id": f"d{i}",
@@ -230,13 +326,18 @@ async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
             description=f"Flash {mem.get('flash', '?')} B · RAM {mem.get('ram', '?')} B",
             artifacts=arts,
         )
-        led = validate_led_task(root, "PC13")
+        ioc = load_ioc_analysis(root)
+        pin = led_from_ioc(ioc)
+        led = validate_led_task(root, pin)
+        usart = inspect_usart(root)
         run.emit(
             type="validation",
             status="success" if led["passed"] else "failed",
-            title=f"LED 校验 {led['score']}",
-            description=json.dumps(led["checks"], ensure_ascii=False),
+            title=f"静态 LED 校验 {led['score']} (pin {pin})",
+            description=json.dumps({"method": "static_source", "led": led["checks"], "usart": usart.get("checks")}, ensure_ascii=False),
         )
+        if _wants_device(run.prompt):
+            await _maybe_run_on_device(run, root)
         clang = clangd_diagnostics(root)
         if clang.get("available") and clang.get("diagnostics"):
             run.emit(type="diagnostic", status="success", title="clangd", description=str(clang["diagnostics"][:8]))
@@ -248,6 +349,83 @@ async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
         elif not cpp.get("available"):
             run.emit(type="test", status="success", title="cppcheck Unavailable")
     return result
+
+
+def _wants_device(prompt: str) -> bool:
+    p = prompt.lower()
+    return any(k in p for k in ("usart", "uart", "串口", "hello", "flash", "真机", "500ms", "run on device"))
+
+
+def _emit_pipeline(run: AgentRun, pipeline: dict[str, Any]) -> None:
+    for step in pipeline.get("steps") or []:
+        kind = step.get("kind") or "tool_call"
+        ev_type = {"flash": "flash", "serial": "serial", "validate": "validation", "build": "compile"}.get(kind, "tool_call")
+        logs = step.get("logs") or ""
+        if ev_type == "serial" and logs:
+            for i, line in enumerate(logs.splitlines()[:40]):
+                run.emit(type="serial", status=step.get("status") or "running", title="Serial", output=f"[00:00.{i}] {line}")
+        else:
+            run.emit(
+                type=ev_type,
+                status="success" if step.get("status") == "success" else ("failed" if step.get("status") == "failed" else "failed"),
+                title=step.get("title") or kind,
+                description=step.get("detail"),
+                output=logs[-2000:] if logs else None,
+                reason=step.get("reason"),
+            )
+    val = pipeline.get("validation") or {}
+    if val:
+        run.emit(
+            type="validation",
+            status="success" if val.get("status") == "pass" else ("failed" if val.get("status") == "fail" else "failed"),
+            title="Hardware validation",
+            description=json.dumps(
+                {
+                    "method": "serial" if val.get("actual") else "unavailable",
+                    "expected": val.get("expected"),
+                    "observed": val.get("actual"),
+                    "confidence": val.get("confidence"),
+                    "status": val.get("status"),
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+
+async def _maybe_run_on_device(run: AgentRun, root: Path) -> None:
+    device = run.serial_device
+    pipeline = run_pipeline(root, serial_device=device, baud=run.serial_baud, expect=run.expect)
+    _emit_pipeline(run, pipeline)
+
+
+async def _flash_tool(run: AgentRun, root: Path) -> str:
+    try:
+        data = flash_elf(root)
+    except FlashError as e:
+        run.emit(type="flash", status="failed", title="Flash", description=str(e))
+        return json.dumps({"success": False, "error": str(e)})
+    ok = bool(data.get("success"))
+    run.emit(type="flash", status="success" if ok else "failed", title="Flash", output=str(data.get("output") or "")[-2000:])
+    return json.dumps(data, ensure_ascii=False)[:8000]
+
+
+async def _serial_tool(run: AgentRun, args: dict[str, Any]) -> str:
+    device = str(args.get("device") or run.serial_device or "")
+    baud = int(args.get("baud") or run.serial_baud or 115200)
+    if not device:
+        run.emit(type="serial", status="failed", title="Serial", description="no serial device")
+        return json.dumps({"available": False, "reason": "no serial device"})
+    try:
+        sample = sample_serial(device, baud)
+    except (ValueError, RuntimeError, OSError) as e:
+        run.emit(type="serial", status="failed", title="Serial", description=str(e))
+        return json.dumps({"success": False, "error": str(e)})
+    lines = sample.get("lines") or []
+    for i, line in enumerate(lines[:40]):
+        run.emit(type="serial", status="success", title="Serial", output=f"[00:00.{i}] {line}")
+    if not lines:
+        run.emit(type="serial", status="failed", title="Serial", description="no serial output")
+    return json.dumps(sample, ensure_ascii=False)[:8000]
 
 
 async def run_agent(run: AgentRun) -> None:
@@ -333,12 +511,19 @@ async def run_agent(run: AgentRun) -> None:
 
 
 async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
-    ctx = build_context(root, iteration=0, board=board.get("board", "Blue Pill"))
+    ctx = build_context(
+        root,
+        iteration=0,
+        board=board.get("board", "Blue Pill"),
+        prompt=run.prompt,
+        extra_skills=run.loaded_skills,
+    )
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM},
         {
             "role": "user",
-            "content": f"{context_prompt(ctx)}\n任务：{run.prompt}\n工程已存在。先读文件，再最小修改并编译直到 exit code == 0。",
+            "content": f"{context_prompt(ctx)}\n任务：{run.prompt}\n工程已存在。先读文件，再最小修改并编译直到 exit code == 0。"
+            f"{' 编译成功后可用 run_on_device / flash_firmware / serial_read。无调试器时不要声称烧录成功。' if _wants_device(run.prompt) else ''}",
         },
     ]
     if looks_complex(run.prompt):
@@ -348,7 +533,15 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
         if run.cancelled():
             raise asyncio.CancelledError()
         run.iteration = i + 1
-        ctx = build_context(root, iteration=i + 1, errors=run.last_errors, knowledge=run.citations[-3:], board=board.get("board", "Blue Pill"))
+        ctx = build_context(
+            root,
+            iteration=i + 1,
+            errors=run.last_errors,
+            knowledge=run.citations[-3:],
+            board=board.get("board", "Blue Pill"),
+            prompt=run.prompt,
+            extra_skills=run.loaded_skills,
+        )
         messages.append({"role": "system", "content": "当前上下文：\n" + context_prompt(ctx)})
         run.emit(type="reasoning", status="running", title=f"第 {i + 1} 轮推理")
         t0 = time.perf_counter()
@@ -389,9 +582,30 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
             elif fn == "compile_project":
                 compiled = await _compile(run, root)
                 result = json.dumps(compiled, ensure_ascii=False)
-                if compiled.get("success"):
+                if compiled.get("success") and not _wants_device(run.prompt):
                     run.status = "success"
                     return
+            elif fn == "flash_firmware":
+                result = await _flash_tool(run, root)
+            elif fn == "serial_read":
+                result = await _serial_tool(run, args)
+            elif fn == "run_on_device":
+                if args.get("device"):
+                    run.serial_device = str(args.get("device"))
+                if args.get("baud"):
+                    run.serial_baud = int(args.get("baud"))
+                if args.get("expect"):
+                    run.expect = str(args.get("expect"))
+                pipeline = run_pipeline(root, serial_device=run.serial_device, baud=run.serial_baud, expect=run.expect)
+                _emit_pipeline(run, pipeline)
+                result = json.dumps(pipeline, ensure_ascii=False)[:8000]
+            elif fn == "apply_error_memory_fix":
+                result = _exec_sync(fn, args, root, run)
+                compiled = await _compile(run, root)
+                eid = str(args.get("id", ""))
+                if eid:
+                    mark_fix_result(eid, success=bool(compiled.get("success")))
+                result = json.dumps({"fix": json.loads(result) if result.startswith("{") else result, "compile": compiled.get("success")}, ensure_ascii=False)[:8000]
             else:
                 result = _exec_sync(fn, args, root, run)
                 if fn == "retrieve_knowledge":

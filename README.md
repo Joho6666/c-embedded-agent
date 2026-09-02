@@ -1,82 +1,148 @@
-# Universal AI Gateway
+# C-Agent Workbench 2.0
 
-Self-hosted AI API Gateway: Next.js control plane + FastAPI data plane.
+AI firmware engineering workbench for C / MCU. Current **real** backend remains STM32F103 HAL: requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
 
-```
-BASE_URL=http://localhost:8000/v1
-API_KEY=sk-gw-xxxx
-```
+UI shell is Workbench 2.0 (Start Center · Multi-MCU Setup · Agent Workspace · Debug & Validation). ESP32 / C51 / RP2040 / Host C are **Planned / UI Preview**, not Supported.
 
-## Implemented
+Version: **0.8.0-beta** (Late Beta). Not a Production Candidate: Agent vs Baseline was not executed (no LLM configured on this machine).
 
-- OpenAI-compatible `GET /v1/models`, `POST /v1/chat/completions` (SSE), `POST /v1/responses`
-- Virtual models, credential pool, failover (429 / 5xx / timeout)
-- Circuit breaker; API Key and Credential RPM/TPM/daily/monthly quotas with auto recovery
-- Routing strategies from backend: priority, failover, round_robin, weighted_round_robin, least_latency, highest_success, quota_aware, health_aware, random, hybrid
-- Request logs and Usage from RequestLog (cost is 0 until model pricing is set)
-- Control plane BFF `/api/control/*` — admin secret is not shipped to the browser
-- Optional login: `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` (sha256 hex) → HttpOnly cookie
-- Adapters: OpenAI Compatible, Gemini, Ollama, CLIProxy bridge
+The evaluation question is not “how many pages were added?”. It is:
 
-## Experimental
+- On the same STM32F103 task, how often does a plain LLM compile?
+- How often does C-Embedded Agent compile and pass semantic validation?
 
-- CLIProxy / EasyCLIProxy official OAuth bridge (`:8317`). Management API varies by version; if login URL is unavailable, use the EasyCLIProxy tray. No cookie scraping.
-- `ALLOW_LOCAL_UPSTREAM=true` for local mock/Ollama/CLIProxy loopback URLs on OpenAI-compatible adapters
-- Optional Redis (`docker compose --profile redis up -d`) — State Backend becomes Redis when reachable; otherwise Memory
+## Support Matrix
 
-## Planned
+| Platform | Build | Agent | Flash | Hardware Validate |
+|---|---|---|---|---|
+| STM32F103 HAL | ✅ | Beta | Beta | Beta |
+| STM32F407 | ❌ | ❌ | ❌ | ❌ |
+| ESP32 | ❌ | ❌ | ❌ | ❌ |
+| 8051 | ❌ | ❌ | ❌ | ❌ |
 
-- OIDC / GitHub / Google login (production login is env + cookie today)
-- `least_load` / live `lowest_cost` (hidden until implemented)
-- Embeddings / images / audio data plane
+Do not claim ESP32 / 8051 / F407 are available.
 
-## Quick start
+## Modes
+
+- **DEMO**: backend not running. Top bar DEMO. Frontend mock only — never pretends LIVE success.
+- **LIVE**: FastAPI running. Missing `arm-none-eabi-gcc` is reported as missing; **never** fakes Build Successful.
+- **OFFLINE**: API URL configured but backend unreachable.
+
+## Start
 
 ```bash
-# backend
-cd backend
-python -m venv .venv && .venv/Scripts/activate
-pip install -r requirements.txt
-set PYTHONPATH=.
-set GATEWAY_ADMIN_API_KEY=dev-admin
-set GATEWAY_SECRET_KEY=dev-secret
-set CREDENTIAL_ENCRYPTION_KEY=dev-cred
-set ALLOW_LOCAL_UPSTREAM=true
-uvicorn app.main:app --port 8000
-
-# frontend (another terminal)
-cd ..
-copy .env.example .env.local
-# set GATEWAY_BACKEND_URL=http://127.0.0.1:8000
-# set GATEWAY_ADMIN_API_KEY=dev-admin
-# set GATEWAY_SECRET_KEY=dev-secret
-npx next dev --port 3000
+npm install
+npm run dev
 ```
-
-Do not run `npm run dev` from the `default` workspace (C-Embedded Agent). Use this repo only.
-
-## Docker
-
-Set secrets in the environment (no defaults in compose):
 
 ```bash
-set GATEWAY_ADMIN_API_KEY=...
-set GATEWAY_SECRET_KEY=...
-set CREDENTIAL_ENCRYPTION_KEY=...
-docker compose up -d --build
+pip install -r backend/requirements.txt
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-Redis: `docker compose --profile redis up -d --build`
+Open http://localhost:3000
 
-Health page should show `State Backend = Redis` when the redis profile is running.
+Workbench pages:
 
-Backup: `python backend/scripts/backup.py` writes `gateway-backup-YYYYMMDD.zip`. Restore SQLite by stopping the backend and replacing `/data/gateway.db`. Encrypted credentials are not exported in plaintext.
+- `/` Start Center
+- `/projects/new` Multi-MCU Setup
+- `/workspace` Agent Workspace
+- `/debug` Debug & Hardware Validation
 
-Log cleanup: `python -m app.tasks.cleanup_logs` (also runs periodically on startup).
+Screenshots: `docs/screenshots/` (add captures after local run). Architecture: `docs/WORKBENCH_2_DESIGN.md`, `docs/PLATFORM_UI_ARCHITECTURE.md`, `docs/WORKBENCH_2_UI_AUDIT.md`.
 
-## Security notes
+See `.env.example`. LLM must be public http/https (localhost / private hosts rejected). Without LLM the Agent reports unavailable and still tries `make`.
 
-- Admin key never uses `NEXT_PUBLIC_*`
-- Upstream URLs must be http/https; private/loopback hosts are rejected unless the adapter is local or `ALLOW_LOCAL_UPSTREAM=true`
-- SQL uses bound parameters
-- Secrets come from environment variables
+`GET /api/version` returns App / Agent Runtime / Template / STM32CubeF1 versions. HAL/CMSIS pin is `vendor.lock.json`.
+
+## STM32F103 official template
+
+Default project: `templates/stm32f103_hal_official` (STM32CubeF1 CMSIS + HAL, not a stub).
+
+- MCU: STM32F103C8T6
+- Board: Blue Pill
+- LED: **PC13**, 500ms toggle
+- Sync official drivers: `python scripts/sync_cubef1.py`
+
+```bash
+cd templates/stm32f103_hal_official
+make clean && make -j4
+```
+
+Needs `arm-none-eabi-gcc` / `objcopy` / `size` / `make`. Tests skip when the toolchain is absent — they do not invent scores.
+
+Portable toolchain autodetection:
+
+- `%USERPROFILE%/tools/xpack-arm-none-eabi-gcc-13.3.1-1.1/bin`
+- `%USERPROFILE%/tools/xpack-windows-build-tools-4.4.1-3/bin`
+
+or `CEA_TOOLCHAIN_PATH`.
+
+## Golden projects
+
+All of the following compiled on this machine with ARM GCC 13.3 into `firmware.elf` / `.hex` / `.bin`:
+
+| Project | Path |
+|---|---|
+| LED | `examples/golden/stm32f103_led/` |
+| EXTI | `examples/golden/stm32f103_exti/` |
+| TIM interrupt | `examples/golden/stm32f103_tim_interrupt/` |
+| PWM | `examples/golden/stm32f103_pwm/` |
+| USART | `examples/golden/stm32f103_usart/` |
+| USART interrupt | `examples/golden/stm32f103_usart_it/` |
+| USART DMA | `examples/golden/stm32f103_usart_dma/` |
+| ADC poll | `examples/golden/stm32f103_adc/` |
+| ADC DMA | `examples/golden/stm32f103_adc_dma/` |
+| I2C | `examples/golden/stm32f103_i2c/` |
+| SPI | `examples/golden/stm32f103_spi/` |
+
+Refresh: `python examples/golden/sync_overlay.py all`
+
+## Agent rules
+
+Read the tree → Knowledge / MCU pin / IOC / Skill recipe → `configure_*` for init → LLM writes application logic → `make` → known Error Memory fix before asking the model again.
+
+Default writes are limited to `Core/Src` and `Core/Inc`. Protected: `Drivers/`, `Middlewares/`, `startup*.s`, `*.ld`, `Makefile`, `*.ioc`. HAL sources are registered with `register_hal_module`, not by letting the model edit the Makefile.
+
+Context priority: **IOC > project.json > Board Profile > Default**.
+
+Existing STM32 trees can be scanned/imported (`scan_existing_project` / `POST /api/projects/import-existing`) instead of rebuilding from the template. Import-ioc still creates a template project plus the `.ioc` sidecar.
+
+## Hardware
+
+Build → compile fix → Flash → verify reset → Serial → hardware validator. At most **3** flash iterations. Status is one of `PASS | FAIL | PARTIAL | UNKNOWN | UNAVAILABLE`. PWM without a probe is `PARTIAL`. LED without GPIO feedback is static pass + hardware `UNVERIFIED`. No board → **Hardware Not Tested**, never PASS.
+
+Per-project session: `hardware-session.json` (`debugger`, `serialDevice`, `baud`, `board`, `mcu`).
+
+USART expect: `CEA:USART:PASS`. ADC expect: `CEA:ADC:value=` in 0–4095.
+
+## Benchmark
+
+```bash
+python benchmarks/benchmark.py
+```
+
+Writes:
+
+- `benchmarks/stm32f103/results.json`
+- `benchmarks/stm32f103/latest-summary.json` (commit this)
+- `benchmarks/comparison-summary.json` (Agent vs Baseline)
+
+This checkout: ARM GCC present, **LLM not configured**. Summary records skip reasons and zeros. Template itself compiled (`template_build: true`). No fake Agent vs Baseline percentages.
+
+## Tests / CI
+
+```bash
+cd backend && python -m pytest -q
+npm run test
+npm run lint
+npm run build
+```
+
+GitHub Actions: frontend `npm ci && npm run build`, backend `pytest`. ARM GCC is optional (golden `make` tests skip).
+
+Leftover Universal AI Gateway tests (`tests/test_gateway.py`, `tests/test_v090.py`) are **ignored** by pytest. They target `/v1` / `/admin` which this app does not mount. That is not deleting Agent tests.
+
+`unigateway/` is an independent mock console from an older graft. It is not imported by the Embedded Agent. Do not treat it as part of this product.
+
+This release is STM32F103 only.

@@ -1,6 +1,8 @@
-# C-Embedded Agent
+# C-Agent Workbench 2.0
 
-AI firmware engineering agent for STM32F103 — requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
+AI firmware engineering workbench for C / MCU. Current **real** backend remains STM32F103 HAL: requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
+
+UI shell is Workbench 2.0 (Start Center · Multi-MCU Setup · Agent Workspace · Debug & Validation). ESP32 / C51 / RP2040 / Host C are **Planned / UI Preview**, not Supported.
 
 Version: **0.8.0-beta** (Late Beta). Not a Production Candidate: Agent vs Baseline was not executed (no LLM configured on this machine).
 
@@ -39,6 +41,15 @@ python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
 Open http://localhost:3000
+
+Workbench pages:
+
+- `/` Start Center
+- `/projects/new` Multi-MCU Setup
+- `/workspace` Agent Workspace
+- `/debug` Debug & Hardware Validation
+
+Screenshots: `docs/screenshots/` (add captures after local run). Architecture: `docs/WORKBENCH_2_DESIGN.md`, `docs/PLATFORM_UI_ARCHITECTURE.md`, `docs/WORKBENCH_2_UI_AUDIT.md`.
 
 See `.env.example`. LLM must be public http/https (localhost / private hosts rejected). Without LLM the Agent reports unavailable and still tries `make`.
 
@@ -123,6 +134,8 @@ This checkout: ARM GCC present, **LLM not configured**. Summary records skip rea
 
 ```bash
 cd backend && python -m pytest -q
+npm run test
+npm run lint
 npm run build
 ```
 

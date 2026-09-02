@@ -1,5 +1,9 @@
 # RELEASE_REPORT — C-Embedded Agent 0.8.0-beta
 
+## Workbench 2.0 UI
+
+Frontend information architecture rebuilt around four pages: Start Center, Multi-MCU Setup, Agent Workspace, Debug & Hardware Validation. STM32F103 HAL remains the only supported backend. ESP32 / C51 / RP2040 / Host C are UI Preview / Planned. Environment and device panels call `/api/environment` and `/api/devices` and do not fake Connected / AVAILABLE.
+
 ## Version
 
 - App: 0.8.0-beta

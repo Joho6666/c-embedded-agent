@@ -22,5 +22,24 @@ export const useProject = create<ProjectState>()(
 
 export function currentProject(): Project {
   const id = useProject.getState().projectId;
-  return projects.find((p) => p.id === id) ?? projects[0];
+  return (
+    projects.find((p) => p.id === id) ?? {
+      id,
+      name: id,
+      slug: id,
+      description: "",
+      mcu: "",
+      platform: "STM32",
+      platformId: "stm32",
+      board: "",
+      workspacePath: id,
+      framework: "",
+      compiler: "",
+      rtos: "",
+      gitBranch: "main",
+      createdAt: "",
+      updatedAt: "",
+      buildStatus: "idle",
+    }
+  );
 }

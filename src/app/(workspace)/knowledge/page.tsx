@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { KnowledgeCard } from "@/components/knowledge/KnowledgeCard";
 import { Empty } from "@/components/common/Empty";
 import { knowledgeDocs } from "@/lib/mock/knowledge";
@@ -54,11 +55,19 @@ export default function KnowledgePage() {
 
   return (
     <div className="p-5">
-      <h1 className="text-[18px] font-semibold">嵌入式知识库</h1>
+      <h1 className="text-[18px] font-semibold">Knowledge</h1>
       <p className="text-[12px] text-muted-foreground">
-        Datasheet · HAL · MISRA · RTOS
+        Datasheet · HAL · Skills · Error Memory
         {mode === "live" ? " · LIVE 检索后端知识库" : " · DEMO 本地目录"}
       </p>
+      <div className="mt-2 flex gap-2 text-[12px]">
+        <Link className="text-primary" href="/skills">
+          Skills
+        </Link>
+        <Link className="text-primary" href="/memory/errors">
+          Error Memory
+        </Link>
+      </div>
       {liveHits && <pre className="mt-2 max-w-xl whitespace-pre-wrap rounded-sm border border-border bg-panel-2 p-2 text-[11px] text-muted-foreground">{liveHits}</pre>}
       <input
         value={q}

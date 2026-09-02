@@ -8,7 +8,7 @@ import { fileTree as fallback } from "@/lib/mock/files";
 import { cn } from "@/lib/utils";
 
 function fromFiles(paths: string[]): FileNode[] {
-  const root: FileNode = { name: "STM32_LED_Project", path: "/", type: "folder", children: [] };
+  const root: FileNode = { name: "project", path: "/", type: "folder", children: [] };
   for (const path of paths.sort()) {
     const parts = path.split("/").filter(Boolean);
     let cur = root;

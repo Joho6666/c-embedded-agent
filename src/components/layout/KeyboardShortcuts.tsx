@@ -7,6 +7,7 @@ import { useTerminal } from "@/lib/stores/terminal-store";
 import { useLive } from "@/lib/stores/live-store";
 import { useProject } from "@/lib/stores/project-store";
 import { compileProject } from "@/lib/api/build";
+import { flashProject } from "@/lib/api/flash";
 
 export function KeyboardShortcuts() {
   const toggleBottom = useWorkspaceUI((s) => s.toggleBottom);
@@ -23,7 +24,7 @@ export function KeyboardShortcuts() {
       }
       if (meta && e.key.toLowerCase() === "b") {
         e.preventDefault();
-        setBottomTab("build");
+        setBottomTab("terminal");
         if (useLive.getState().mode !== "live") {
           appendTerminal(["Backend capability unavailable"]);
         } else {
@@ -38,7 +39,15 @@ export function KeyboardShortcuts() {
       if (meta && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setBottomTab("terminal");
-        appendTerminal(["$ STM32_Programmer_CLI -c port=SWD"]);
+        if (useLive.getState().mode !== "live") {
+          appendTerminal(["Backend capability unavailable"]);
+        } else {
+          const id = useProject.getState().projectId;
+          appendTerminal([`$ openocd program verify reset (${id})`]);
+          void flashProject(id).then((r) => {
+            appendTerminal([r.ok ? "flash ok" : `flash failed ${r.error ?? ""}`.trim()]);
+          });
+        }
       }
       if (meta && e.key === "`") {
         e.preventDefault();

@@ -12,8 +12,8 @@ export function HardwareContextPanel() {
     ["内核", ctx.core],
     ["框架", ctx.framework],
     ["时钟", ctx.clock],
-    ["调试器", ctx.debugger],
-    ["串口", `${ctx.serialPort} @ ${ctx.serialBaud}`],
+    ["调试器", ctx.debugger || "unknown"],
+    ["串口", `${ctx.serialPort || "unknown"} @ ${ctx.serialBaud || "—"}`],
     ["工具链", ctx.buildTool],
     ["工程生成", ctx.projectGenerator],
   ];
@@ -30,7 +30,7 @@ export function HardwareContextPanel() {
       </dl>
       {conflict && (
         <div className="mx-3 mb-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px]">
-          ⚠ 引脚冲突 {conflict.pin}
+          引脚冲突 {conflict.pin}
           <div>当前：{conflict.current.function}</div>
           <div>请求：{conflict.requested.function}</div>
         </div>

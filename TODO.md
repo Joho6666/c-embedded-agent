@@ -27,3 +27,13 @@
 - [x] Runs SQLite 持久化（不存 API Key）
 - [x] GitHub Actions
 - [x] README 聚焦 STM32F103
+
+## Workbench 2.0 UI
+
+- [x] Start Center 替换 Dashboard
+- [x] Multi-MCU Setup（PlatformDefinition，未实现平台 Planned）
+- [x] Workspace Activity Bar + Agent 执行计划
+- [x] Debug & Hardware Validation Center（无 GDB 不伪造）
+- [x] Context-aware toolbar
+- [x] GET /api/environment + /api/devices
+- [ ] ESP32 / C51 / Host C 真实后端

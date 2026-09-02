@@ -27,6 +27,10 @@ const eslintConfig = [
       "unibridge/**",
       "xiaojunceping/**",
       "zuoyejing-stitch-rebuild/**",
+      "unigateway/**",
+      "voyage/**",
+      "ai-study-assistant/**",
+      "docs/**",
     ],
   },
 ];

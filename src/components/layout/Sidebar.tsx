@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeft } from "lucide-react";
-import { navItems } from "./nav";
+import { moreNavItems, navItems } from "./nav";
 import { useWorkspaceUI } from "@/lib/stores/workspace-store";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +49,26 @@ export function Sidebar() {
           );
         })}
       </nav>
+      {!collapsed && (
+        <div className="border-t border-border p-1.5">
+          <div className="px-2 py-1 text-[10px] text-muted-foreground">Engineering Tools</div>
+          {moreNavItems.map((item) => {
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center rounded-sm px-2 py-1 text-[11px]",
+                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </aside>
   );
 }

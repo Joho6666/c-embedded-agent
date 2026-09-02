@@ -15,7 +15,7 @@ from app.agent.runtime import RUNS, AgentRun, event_stream, request_stop, resolv
 from app.config.settings import settings
 from app.db import list_runs, load_run
 from app.tools.compiler import CompileError, compile_project
-from app.tools.detect import gcc_installed, tool_status
+from app.tools.detect import connected_devices, environment_status, gcc_installed, tool_status
 from app.tools.error_memory import get_error, list_errors, record_from_output
 from app.tools.filesystem import list_files, read_file, write_file
 from app.tools.flash import FlashError, flash_elf
@@ -300,6 +300,16 @@ def knowledge_ingest(body: IngestBody) -> dict[str, Any]:
 @app.get("/api/tools/status")
 def tools() -> list[dict[str, Any]]:
     return tool_status()
+
+
+@app.get("/api/environment")
+def environment() -> dict[str, Any]:
+    return environment_status()
+
+
+@app.get("/api/devices")
+def devices() -> dict[str, Any]:
+    return connected_devices()
 
 
 @app.get("/api/serial/ports")

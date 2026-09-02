@@ -21,7 +21,7 @@ export function ProjectCard({ project }: { project: Project }) {
 
   return (
     <Link
-      href="/agent"
+      href="/workspace"
       onClick={() => {
         setProjectId(project.id);
         const m = mcuCatalog.find((x) => x.name === project.mcu);

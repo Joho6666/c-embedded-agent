@@ -52,7 +52,7 @@ export function CommandPalette() {
           <Command.Empty className="px-3 py-6 text-center text-[12px] text-muted-foreground">无匹配</Command.Empty>
           <Command.Group heading="操作" className="px-1 py-1 text-[10px] text-muted-foreground">
             {[
-              { id: "demo", label: "运行 STM32 LED 演示", run: () => { void startGoldenPath(); go("/agent"); } },
+              { id: "demo", label: "运行 STM32 LED 演示", run: () => { void startGoldenPath(); go("/workspace"); } },
               { id: "stop", label: "停止 Agent", run: () => { void stopRun(); setOpen(false); } },
               { id: "save", label: "保存当前文件", run: () => { saveFile(); setOpen(false); } },
               {

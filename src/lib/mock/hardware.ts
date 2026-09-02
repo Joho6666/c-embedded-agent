@@ -24,8 +24,8 @@ export const defaultHardware: HardwareContext = {
   sdkVersion: "STM32CubeF1 1.8.6",
   buildTool: "ARM GCC",
   projectGenerator: "STM32CubeMX",
-  debugger: "ST-Link V2",
-  serialPort: "COM3",
+  debugger: "",
+  serialPort: "",
   serialBaud: 115200,
   pins: pinAssignments,
   peripherals: [

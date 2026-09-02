@@ -15,9 +15,20 @@ const map = {
   idle: { label: "空闲", cls: "text-muted-foreground bg-muted" },
   complete: { label: "完成", cls: "text-success bg-success/10" },
   stopped: { label: "已停止", cls: "text-warning bg-warning/10" },
-  pass: { label: "通过", cls: "text-success bg-success/10" },
-  fail: { label: "失败", cls: "text-error bg-error/10" },
+  pass: { label: "PASS", cls: "text-success bg-success/10" },
+  fail: { label: "FAIL", cls: "text-error bg-error/10" },
   skip: { label: "跳过", cls: "text-muted-foreground bg-muted" },
+  partial: { label: "PARTIAL", cls: "text-warning bg-warning/10" },
+  unknown: { label: "UNKNOWN", cls: "text-muted-foreground bg-muted" },
+  unavailable: { label: "UNAVAILABLE", cls: "text-muted-foreground bg-muted" },
+  not_tested: { label: "NOT TESTED", cls: "text-muted-foreground bg-muted" },
+  available: { label: "AVAILABLE", cls: "text-success bg-success/10" },
+  not_installed: { label: "NOT INSTALLED", cls: "text-error bg-error/10" },
+  not_configured: { label: "NOT CONFIGURED", cls: "text-warning bg-warning/10" },
+  supported: { label: "Beta", cls: "text-success bg-success/10" },
+  experimental: { label: "Experimental", cls: "text-warning bg-warning/10" },
+  planned: { label: "Planned", cls: "text-muted-foreground bg-muted" },
+  not_detected: { label: "Not Detected", cls: "text-muted-foreground bg-muted" },
 } as const;
 
 export function StatusBadge({

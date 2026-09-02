@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "C-Embedded Agent",
-  description: "专注 C 语言与嵌入式开发的 AI 工程师",
+  title: "C-Agent Workbench 2.0",
+  description: "通用 C / 嵌入式 AI Engineering Workbench",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

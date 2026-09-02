@@ -2,31 +2,15 @@
 
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { AppShell } from "@/components/layout/AppShell";
-import { PlanViewer } from "@/components/agent/PlanViewer";
+import { WorkbenchShell } from "@/components/workbench/WorkbenchShell";
 import { KnowledgeDrawer } from "@/components/knowledge/KnowledgeDrawer";
-import { useAgent } from "@/lib/stores/agent-store";
-import { goldenPlan } from "@/lib/mock/golden-path";
 
 export default function WorkspaceLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const runPlan = useAgent((s) => s.activeRun?.plan);
-  const plan = runPlan ?? goldenPlan;
-  const hide =
-    pathname === "/agent" ||
-    pathname === "/" ||
-    pathname === "/ioc" ||
-    pathname === "/validation" ||
-    pathname.startsWith("/projects") ||
-    pathname.startsWith("/settings") ||
-    pathname.startsWith("/skills") ||
-    pathname.startsWith("/memory") ||
-    pathname.startsWith("/benchmark");
-  const context = hide ? null : <PlanViewer plan={plan} />;
   return (
-    <AppShell context={context}>
+    <WorkbenchShell pathname={pathname}>
       <KnowledgeDrawer />
       {children}
-    </AppShell>
+    </WorkbenchShell>
   );
 }

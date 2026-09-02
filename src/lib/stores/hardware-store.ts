@@ -30,6 +30,6 @@ export const useHardware = create<HardwareState>()(
       setIoc: (a) => set({ ioc: a }),
       setHardwareRun: (r) => set({ hardwareRun: r }),
     }),
-    { name: "cea-hw", partialize: (s) => ({ context: s.context, ioc: s.ioc }) },
+    { name: "cea-hw-v2", partialize: (s) => ({ context: s.context, ioc: s.ioc }) },
   ),
 );

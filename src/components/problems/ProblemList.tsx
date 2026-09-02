@@ -6,30 +6,24 @@ import { Empty } from "@/components/common/Empty";
 import { useAgent } from "@/lib/stores/agent-store";
 import { useEditor } from "@/lib/stores/editor-store";
 import { useWorkspaceUI } from "@/lib/stores/workspace-store";
-import { problems as mockProblems } from "@/lib/mock/build";
 import { cn } from "@/lib/utils";
 
 export function ProblemList() {
   const diagnostics = useAgent((s) => s.diagnostics);
-  const liveRun = useAgent((s) => s.liveRun);
-  const events = useAgent((s) => s.events);
   const startGoldenPath = useAgent((s) => s.startGoldenPath);
   const openFile = useEditor((s) => s.openFile);
   const setView = useWorkspaceUI((s) => s.setAgentView);
   const router = useRouter();
 
-  const usedLive = liveRun || events.length > 0;
-  const list = usedLive
-    ? diagnostics.map((d) => ({
-        id: d.id,
-        file: d.path,
-        line: d.line,
-        severity: d.severity,
-        message: d.message,
-        suggestion: d.suggestion,
-        source: d.source,
-      }))
-    : mockProblems;
+  const list = diagnostics.map((d) => ({
+    id: d.id,
+    file: d.path,
+    line: d.line,
+    severity: d.severity,
+    message: d.message,
+    suggestion: d.suggestion,
+    source: d.source,
+  }));
 
   const errors = list.filter((p) => p.severity === "error").length;
   const warnings = list.filter((p) => p.severity === "warning").length;
@@ -38,7 +32,7 @@ export function ProblemList() {
     const path = file.startsWith("/") ? file : file.includes("gpio") ? "/Core/Inc/gpio.h" : "/Core/Src/main.c";
     openFile(path, line);
     setView("code");
-    router.push("/code");
+    router.push("/workspace");
   }
 
   return (

@@ -28,13 +28,13 @@ export function HardwareRunButton() {
           projectId,
           serialDevice: ctx.serialPort || undefined,
           baud: ctx.serialBaud,
-          expect: "Hello",
+          expect: undefined,
         })
           .then(setRun)
           .finally(() => setBusy(false));
       }}
     >
-      {busy ? "Running…" : "Run on Device"}
+      {busy ? "运行中…" : "在设备上运行"}
     </Button>
   );
 }

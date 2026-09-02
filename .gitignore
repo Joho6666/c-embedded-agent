@@ -26,8 +26,6 @@
 *.map
 !templates/**/startup_*.s
 benchmarks/**/results.json
-examples/golden/stm32f103_usart/
-examples/golden/stm32f103_pwm/
 
 # production
 /build
@@ -72,3 +70,7 @@ unibridge/
 xiaojunceping/
 zuoyejing-stitch-rebuild/
 NUL
+# extra local junk
+backend/.mimosa/
+*.obj
+*.lst

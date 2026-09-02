@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import deque
 from typing import Any
 
@@ -71,3 +72,31 @@ def read_available() -> list[dict[str, str]]:
             if line:
                 _session["lines"].append({"text": line})
     return list(_session["lines"])
+
+
+def wait_for(expect: str | None = None, max_s: float = 8.0, quiet: float = 0.3) -> list[str]:
+    """Adaptive serial wait: stop on expect token, else after a quiet period, else cap.
+
+    No connected port → empty list (caller must not treat this as PASS).
+    """
+    if _session.get("port") is None:
+        return [r.get("text") or "" for r in list(_session["lines"]) if r.get("text")]
+    deadline = time.time() + max(0.2, float(max_s))
+    quiet = max(0.05, float(quiet))
+    last_n = 0
+    last_change = time.time()
+    needle = (expect or "").strip()
+    while time.time() < deadline:
+        rows = read_available()
+        lines = [r.get("text") or "" for r in rows if r.get("text")]
+        joined = "\n".join(lines)
+        if needle and needle.lower() in joined.lower():
+            return lines
+        if len(lines) != last_n:
+            last_n = len(lines)
+            last_change = time.time()
+        elif lines and (time.time() - last_change) >= quiet:
+            return lines
+        time.sleep(0.2)
+    rows = read_available()
+    return [r.get("text") or "" for r in rows if r.get("text")]

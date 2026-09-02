@@ -12,6 +12,7 @@ from app.validation.i2c import validate_i2c
 from app.validation.pwm import validate_pwm
 from app.validation.spi import validate_spi
 from app.validation.tim import validate_tim
+from app.validation.review import review_project
 from app.validation.usart import validate_usart
 
 
@@ -67,10 +68,18 @@ def validate_project(root: Path, prompt: str = "") -> dict[str, Any]:
         for k, v in (item.get("checks") or {}).items():
             checks[f"{kind}.{k}"] = bool(v)
         missing.extend(f"{kind}.{m}" for m in (item.get("missing") or []))
+    review = review_project(root)
+    per["review"] = review
+    for k, v in (review.get("checks") or {}).items():
+        checks[f"review.{k}"] = bool(v)
+    missing.extend(f"review.{m}" for m in (review.get("missing") or []))
     n = max(len(checks), 1)
     score = round(sum(1 for v in checks.values() if v) / n, 4)
-    passed = score >= 0.8 and not any(
-        str(m).endswith((".hal_init", ".clock", ".module")) for m in missing
+    review_fail = bool(review.get("missing"))
+    passed = (
+        score >= 0.8
+        and not review_fail
+        and not any(str(m).endswith((".hal_init", ".clock", ".module")) for m in missing)
     )
     return result_dict(passed=passed, score=score, checks=checks, missing=missing, extra={"kinds": kinds, "per": per})
 

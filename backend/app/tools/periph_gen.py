@@ -7,6 +7,83 @@ from app.tools.filesystem import read_file, write_file
 from app.tools.hal_modules import register_hal_module
 
 
+def _requested_pins(kind: str, args: dict[str, Any]) -> dict[str, str]:
+    kind = (kind or "").lower()
+    if kind == "usart":
+        inst = str(args.get("instance") or "USART1").upper()
+        if inst == "USART2":
+            return {"PA2": "USART2_TX", "PA3": "USART2_RX"}
+        return {"PA9": "USART1_TX", "PA10": "USART1_RX"}
+    if kind == "adc":
+        ch = int(args.get("channel") or 0)
+        return {f"PA{ch}": f"ADC1_IN{ch}"}
+    if kind == "pwm":
+        return {"PA0": "TIM2_CH1"}
+    if kind == "i2c":
+        return {"PB6": "I2C1_SCL", "PB7": "I2C1_SDA"}
+    if kind == "spi":
+        return {"PA5": "SPI1_SCK", "PA6": "SPI1_MISO", "PA7": "SPI1_MOSI"}
+    if kind == "exti":
+        pin = str(args.get("pin") or "PA0").upper()
+        return {pin: "EXTI"}
+    return {}
+
+
+def pin_occupancy(root: Path) -> dict[str, list[str]]:
+    occ: dict[str, list[str]] = {}
+
+    def add(pin: str, owner: str) -> None:
+        occ.setdefault(pin, [])
+        if owner not in occ[pin]:
+            occ[pin].append(owner)
+
+    try:
+        from app.tools.filesystem import list_files
+
+        rels = [r for r in list_files(root) if r.startswith("Core/") and r.endswith((".c", ".h"))]
+        blob = "\n".join(read_file(root, r) for r in rels)
+    except (OSError, FileNotFoundError):
+        blob = ""
+    if "huart1" in blob or ("USART1" in blob and "HAL_UART_Init" in blob):
+        add("PA9", "USART1_TX")
+        add("PA10", "USART1_RX")
+    if "HAL_TIM_PWM_Init" in blob or "MX_TIM2_Init" in blob:
+        add("PA0", "TIM2_CH1")
+    if "HAL_ADC_Init" in blob or "MX_ADC1_Init" in blob:
+        add("PA0", "ADC1_IN0")
+    if "HAL_I2C_Init" in blob or "MX_I2C1_Init" in blob:
+        add("PB6", "I2C1_SCL")
+        add("PB7", "I2C1_SDA")
+    if "HAL_SPI_Init" in blob or "MX_SPI1_Init" in blob:
+        add("PA5", "SPI1_SCK")
+        add("PA6", "SPI1_MISO")
+        add("PA7", "SPI1_MOSI")
+    if "GPIO_MODE_IT_FALLING" in blob or "GPIO_MODE_IT_RISING" in blob or "EXTI0_IRQHandler" in blob:
+        add("PA0", "EXTI0")
+    try:
+        from app.agent.context import load_ioc_analysis
+
+        ioc = load_ioc_analysis(root)
+        for p in (ioc or {}).get("pins") or []:
+            pin = str(p.get("pin") or "")
+            sig = str(p.get("signal") or "")
+            if pin and sig and "GPIO" not in sig.upper():
+                add(pin, sig)
+    except Exception:
+        pass
+    return occ
+
+
+def pin_conflicts(requested: dict[str, str], occupied: dict[str, list[str]]) -> list[dict[str, str]]:
+    hits = []
+    for pin, owner in requested.items():
+        have = occupied.get(pin) or []
+        others = [h for h in have if h != owner]
+        if others:
+            hits.append({"pin": pin, "requested": owner, "existing": ",".join(others)})
+    return hits
+
+
 def configure_peripheral(root: Path, kind: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
     args = args or {}
     fn = {
@@ -23,7 +100,16 @@ def configure_peripheral(root: Path, kind: str, args: dict[str, Any] | None = No
 
     params = inspect.signature(fn).parameters
     kwargs = {k: v for k, v in args.items() if k in params and k != "root"}
-    return fn(root, **kwargs)
+    force = bool(args.get("force"))
+    req = _requested_pins(kind, {**kwargs, **args})
+    occ = pin_occupancy(root)
+    conflicts = pin_conflicts(req, occ)
+    if conflicts and not force:
+        return {"ok": False, "reason": "pin conflict", "conflicts": conflicts, "requested": req}
+    out = fn(root, **kwargs)
+    if conflicts:
+        out["warnings"] = conflicts
+    return out
 
 
 def _add_core_source(root: Path, rel: str) -> None:

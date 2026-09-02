@@ -22,6 +22,7 @@ from app.tools.knowledge import format_citation, retrieve_knowledge
 from app.tools.patch import PatchError, apply_patch, preview_patch
 from app.tools.search import search_code
 from app.tools.error_memory import apply_known_fix, list_errors, mark_fix_result, record_from_output, match_known_errors
+from app.tools.debug_read import read_register, read_symbol
 from app.tools.flash import FlashError, flash_elf
 from app.tools.hardware_run import run_pipeline, sample_serial
 from app.tools.skills import get_skill, skill_summary
@@ -45,7 +46,7 @@ SYSTEM = """你是一名资深嵌入式 C 工程师，目标是让 STM32F103C8T6
 8. 根据真实 GCC/LD Error 修复。
 9. Build 成功以后可以参考静态分析，但不能把分析失败当成编译失败。
 10. 不允许声称成功，除非 compiler exit code == 0。
-禁止凭空编造寄存器、HAL API、GPIO、头文件，禁止擅自修改 MCU 型号。
+禁止凭空编造寄存器、HAL API、GPIO、头文件，禁止擅自修改 MCU 型号。无板时 read_register/read_symbol 只能报 UNAVAILABLE。
 Blue Pill 板载 LED 默认 PC13，不是 PA5。
 USART1 默认 PA9 TX / PA10 RX。
 """
@@ -61,7 +62,9 @@ TOOLS = [
     {"type": "function", "function": {"name": "get_mcu_info", "description": "STM32F103C8T6 结构化信息", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "get_pin_info", "description": "查询引脚复用", "parameters": {"type": "object", "properties": {"pin": {"type": "string"}}, "required": ["pin"]}}},
     {"type": "function", "function": {"name": "flash_firmware", "description": "用 OpenOCD ST-Link 烧录 firmware.elf。无调试器时返回失败，不要假装成功。", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "serial_read", "description": "打开串口采样约 2 秒。baud 仅 9600 或 115200。", "parameters": {"type": "object", "properties": {"device": {"type": "string"}, "baud": {"type": "integer"}, "expect": {"type": "string"}}, "required": ["device"]}}},
+    {"type": "function", "function": {"name": "serial_read", "description": "打开串口并自适应等待（有 expect 则匹配到即停，否则安静后停，最长约 8 秒）。baud 仅 9600 或 115200。", "parameters": {"type": "object", "properties": {"device": {"type": "string"}, "baud": {"type": "integer"}, "expect": {"type": "string"}}, "required": ["device"]}}},
+    {"type": "function", "function": {"name": "read_register", "description": "只读 Cortex-M 故障寄存器 allowlist：CFSR/HFSR/MMFAR/BFAR/DBGMCU。无板返回 UNAVAILABLE，禁止编造数值。", "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}},
+    {"type": "function", "function": {"name": "read_symbol", "description": "从 firmware.elf 查符号地址（nm）。无 elf/无工具链返回 UNAVAILABLE，不要编造地址。", "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}},
     {"type": "function", "function": {"name": "run_on_device", "description": "Build→Flash→Serial→Validate。无板/无串口标 unavailable。", "parameters": {"type": "object", "properties": {"device": {"type": "string"}, "baud": {"type": "integer"}, "expect": {"type": "string"}}}}},
     {"type": "function", "function": {"name": "load_skill", "description": "加载外设 Skill 摘要（USART/DMA/TIM…）", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
     {"type": "function", "function": {"name": "search_error_memory", "description": "搜索已知编译/链接错误修复", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "tag": {"type": "string"}}, "required": ["query"]}}},
@@ -230,6 +233,24 @@ def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun) -> st
             status="success" if out.get("ok") else "failed",
             title=name,
             files=out.get("files") or [],
+            description=json.dumps(out, ensure_ascii=False)[:800],
+        )
+        return json.dumps(out, ensure_ascii=False)
+    if name == "read_register":
+        out = read_register(str(args.get("name") or args.get("addr") or ""))
+        run.emit(
+            type="tool_call",
+            status="success" if out.get("available") else "failed",
+            title="read_register",
+            description=json.dumps(out, ensure_ascii=False)[:800],
+        )
+        return json.dumps(out, ensure_ascii=False)
+    if name == "read_symbol":
+        out = read_symbol(root, str(args.get("name") or ""))
+        run.emit(
+            type="tool_call",
+            status="success" if out.get("available") else "failed",
+            title="read_symbol",
             description=json.dumps(out, ensure_ascii=False)[:800],
         )
         return json.dumps(out, ensure_ascii=False)
@@ -496,7 +517,7 @@ async def _serial_tool(run: AgentRun, args: dict[str, Any]) -> str:
         run.emit(type="serial", status="failed", title="Serial", description="no serial device")
         return json.dumps({"available": False, "reason": "no serial device"})
     try:
-        sample = sample_serial(device, baud)
+        sample = sample_serial(device, baud, expect=str(args.get("expect") or run.expect or "") or None)
     except (ValueError, RuntimeError, OSError) as e:
         run.emit(type="serial", status="failed", title="Serial", description=str(e))
         return json.dumps({"success": False, "error": str(e)})

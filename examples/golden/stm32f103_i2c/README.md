@@ -1,0 +1,1 @@
+# Golden: I2C1 PB6/PB7 scan 0x08-0x77

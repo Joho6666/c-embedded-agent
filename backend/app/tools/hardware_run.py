@@ -8,9 +8,11 @@ from typing import Any
 from app.tools.compiler import CompileError, compile_project
 from app.tools.error_memory import apply_known_fix, list_errors, mark_fix_result, record_from_output
 from app.tools.flash import FlashError, detect_chip_id, flash_elf
+from app.tools.debug_read import dump_fault
 from app.tools.serialutil import connect as serial_connect
 from app.tools.serialutil import disconnect as serial_disconnect
-from app.tools.serialutil import read_available, status as serial_status
+from app.tools.serialutil import status as serial_status
+from app.tools.serialutil import wait_for as serial_wait_for
 from app.tools.hw_session import load_session
 from app.tools.validate import inspect_usart, validate_led_task
 from app.validation import hardware_status, validate_project
@@ -139,11 +141,7 @@ def _run_pipeline_once(
     if serial_device:
         try:
             serial_connect(serial_device, baud)
-            deadline = time.time() + 2.0
-            while time.time() < deadline:
-                rows = read_available()
-                serial_lines = [r.get("text") or "" for r in rows if r.get("text")]
-                time.sleep(0.2)
+            serial_lines = serial_wait_for(expect=expect, max_s=8.0, quiet=0.3)
             st = serial_status()
             steps.append(
                 _step(
@@ -164,6 +162,19 @@ def _run_pipeline_once(
                 pass
     else:
         steps.append(_step("serial", "Serial", "unavailable", "未指定串口", reason="no serial device"))
+
+    if serial_device and not serial_lines:
+        fault = dump_fault()
+        steps.append(
+            _step(
+                "fault",
+                "Fault dump",
+                "unavailable" if not fault.get("available") else "failed",
+                json_safe(fault.get("regs") or fault.get("reason")),
+                json_safe(fault),
+                reason=str(fault.get("reason") or "no serial; halt dump"),
+            )
+        )
 
     static = validate_led_task(root)
     semantic = validate_project(root, task)
@@ -222,15 +233,10 @@ def _unknown_val() -> dict[str, Any]:
     return {"expected": "", "actual": "", "status": "UNAVAILABLE", "confidence": None, "reason": "Hardware Not Tested"}
 
 
-def sample_serial(device: str, baud: int = 115200, seconds: float = 2.0) -> dict[str, Any]:
+def sample_serial(device: str, baud: int = 115200, seconds: float = 8.0, expect: str | None = None) -> dict[str, Any]:
     serial_connect(device, baud)
     try:
-        deadline = time.time() + seconds
-        lines: list[str] = []
-        while time.time() < deadline:
-            rows = read_available()
-            lines = [r.get("text") or "" for r in rows if r.get("text")]
-            time.sleep(0.2)
+        lines = serial_wait_for(expect=expect, max_s=seconds, quiet=0.3)
         st = serial_status()
         return {"device": st.get("device") or device, "baud": baud, "lines": lines}
     finally:
@@ -292,18 +298,30 @@ def auto_debug(
     extra = list(steps) + list(pipeline.get("steps") or [])
     val = pipeline.get("validation") or _unknown_val()
     if flash_ok and serial_fail:
+        fault = dump_fault()
+        extra.append(
+            _step(
+                "fault",
+                "Fault dump",
+                "unavailable" if not fault.get("available") else "failed",
+                json_safe(fault.get("regs") or fault.get("reason")),
+                json_safe(fault),
+                reason=str(fault.get("reason") or "no serial after auto-debug"),
+            )
+        )
         val = {
             "expected": expect or "USART output",
             "actual": "no serial output after auto-debug",
             "status": "fail",
             "confidence": None,
+            "fault": fault,
         }
         extra.append(
             _step(
                 "validate",
                 "Hardware Validation Failed",
                 "failed",
-                "Possible Causes: USART 未初始化 / GPIO AF / Baud / Clock",
+                "Possible Causes: USART 未初始化 / GPIO AF / Baud / Clock / HardFault",
                 reason="still no serial evidence",
             )
         )

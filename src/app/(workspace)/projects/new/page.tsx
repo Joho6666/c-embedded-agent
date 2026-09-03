@@ -191,7 +191,7 @@ export default function NewProjectPage() {
           </p>
           {step === 1 && (
             <div className="mt-4 grid grid-cols-3 gap-2">
-              {(platforms.length ? platforms : [{ id: "stm32f103-hal", platform: "STM32", status: "ready" }, ...["ESP32", "8051", "AVR", "RP2040", "Linux"].map((p) => ({ id: p, platform: p, status: "unsupported" }))]).map((p) => (
+              {(platforms.length ? platforms : [{ id: "stm32f103-hal", name: "STM32F103 HAL", platform: "STM32", status: "ready" as const, mcus: ["STM32F103C8T6"], boards: ["bluepill_f103c8"], frameworks: ["HAL"], toolchains: ["ARM_GCC"], capabilities: ["create"] }, ...["ESP32", "8051", "AVR", "RP2040", "Linux"].map((p) => ({ id: p, name: p, platform: p, status: "unsupported" as const, mcus: [], boards: [], frameworks: [], toolchains: [], capabilities: [] }))]).map((p) => (
                 <button key={p.id} type="button" disabled={p.status === "unsupported"} title={p.status === "unsupported" ? "后端尚未注册该平台" : undefined} onClick={() => { setPlatform(p.platform as PlatformId); setMcu(p.mcus?.[0] ?? ""); setFramework(p.frameworks?.[0] ?? ""); setToolchain(p.toolchains?.[0] ?? ""); }} className={cn("rounded-sm border px-3 py-4", platform === p.platform ? "border-primary bg-accent" : "border-border", p.status === "unsupported" && "cursor-not-allowed opacity-45")}>
                   {p.platform}<span className="ml-1 text-[10px] text-muted-foreground">{p.status}</span>
                 </button>

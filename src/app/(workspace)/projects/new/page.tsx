@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { mcuCatalog } from "@/lib/mock/hardware";
 import { useHardware } from "@/lib/stores/hardware-store";
 import { useAgent } from "@/lib/stores/agent-store";
 import { useProject } from "@/lib/stores/project-store";
@@ -112,7 +111,7 @@ export default function NewProjectPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-6">
-      <div className="text-[11px] text-muted-foreground">创建 STM32 项目</div>
+      <div className="text-[11px] text-muted-foreground">创建嵌入式项目</div>
       <h1 className="text-[18px] font-semibold">创建嵌入式工程</h1>
       <div className="mt-4 grid grid-cols-3 gap-2">
         {(
@@ -193,7 +192,7 @@ export default function NewProjectPage() {
           {step === 1 && (
             <div className="mt-4 grid grid-cols-3 gap-2">
               {(platforms.length ? platforms : [{ id: "stm32f103-hal", platform: "STM32", status: "ready" }, ...["ESP32", "8051", "AVR", "RP2040", "Linux"].map((p) => ({ id: p, platform: p, status: "unsupported" }))]).map((p) => (
-                <button key={p.id} type="button" disabled={p.status === "unsupported"} title={p.status === "unsupported" ? "后端尚未注册该平台" : undefined} onClick={() => setPlatform(p.platform as PlatformId)} className={cn("rounded-sm border px-3 py-4", platform === p.platform ? "border-primary bg-accent" : "border-border", p.status === "unsupported" && "cursor-not-allowed opacity-45")}>
+                <button key={p.id} type="button" disabled={p.status === "unsupported"} title={p.status === "unsupported" ? "后端尚未注册该平台" : undefined} onClick={() => { setPlatform(p.platform as PlatformId); setMcu(p.mcus?.[0] ?? ""); setFramework(p.frameworks?.[0] ?? ""); setToolchain(p.toolchains?.[0] ?? ""); }} className={cn("rounded-sm border px-3 py-4", platform === p.platform ? "border-primary bg-accent" : "border-border", p.status === "unsupported" && "cursor-not-allowed opacity-45")}>
                   {p.platform}<span className="ml-1 text-[10px] text-muted-foreground">{p.status}</span>
                 </button>
               ))}
@@ -201,17 +200,16 @@ export default function NewProjectPage() {
           )}
           {step === 2 && (
             <div className="mt-4 space-y-1">
-              {mcuCatalog.map((m) => (
-                <button key={m.id} type="button" onClick={() => setMcu(m.name)} className={cn("flex w-full justify-between rounded-sm border px-3 py-2", mcu === m.name ? "border-primary bg-accent" : "border-border")}>
-                  <span className="font-mono">{m.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{m.core}</span>
+              {(selectedAdapter?.mcus ?? []).map((name) => (
+                <button key={name} type="button" onClick={() => setMcu(name)} className={cn("flex w-full justify-between rounded-sm border px-3 py-2", mcu === name ? "border-primary bg-accent" : "border-border")}>
+                  <span className="font-mono">{name}</span>
                 </button>
               ))}
             </div>
           )}
           {step === 3 && (
             <div className="mt-4 grid grid-cols-2 gap-2">
-              {["HAL", "LL", "CMSIS", "Bare Metal"].map((f) => (
+              {(selectedAdapter?.frameworks ?? []).map((f) => (
                 <button key={f} type="button" onClick={() => setFramework(f)} className={cn("rounded-sm border px-3 py-3", framework === f ? "border-primary bg-accent" : "border-border")}>
                   {f === "Bare Metal" ? "裸机" : f}
                 </button>
@@ -220,7 +218,7 @@ export default function NewProjectPage() {
           )}
           {step === 4 && (
             <div className="mt-4 grid grid-cols-2 gap-2">
-              {["ARM GCC", "Keil", "PlatformIO"].map((t) => (
+              {(selectedAdapter?.toolchains ?? []).map((t) => (
                 <button key={t} type="button" onClick={() => setToolchain(t)} className={cn("rounded-sm border px-3 py-3", toolchain === t ? "border-primary bg-accent" : "border-border")}>
                   {t}
                 </button>
@@ -235,9 +233,9 @@ export default function NewProjectPage() {
               <Button onClick={() => setStep((s) => s + 1)}>下一步</Button>
             ) : (
               <Button
-                onClick={() => {
+                onClick={async () => {
                   setContext({ platform, mcu, framework, buildTool: toolchain });
-                  void start({ name: `${mcu} Project`, platform, mcu, framework, toolchain, board: selectedAdapter?.boards[0], adapterId: selectedAdapter?.id });
+                  await start({ name: `${mcu} Project`, platform, mcu, framework, toolchain, board: selectedAdapter?.boards[0], adapterId: selectedAdapter?.id });
                   router.push("/agent");
                 }}
               >

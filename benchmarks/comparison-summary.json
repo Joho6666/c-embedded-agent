@@ -1,6 +1,19 @@
 {
+  "status": "SKIPPED",
+  "tasks": 0,
+  "model": "",
+  "baselineCompileSuccess": null,
+  "agentCompileSuccess": null,
+  "baselineValidation": null,
+  "agentValidation": null,
   "skipped": [
     "LLM not configured"
   ],
-  "reason": "LLM not configured \u2014 not faking Agent vs Baseline"
+  "reason": "LLM not configured \u2014 benchmark not run",
+  "environment": {
+    "temperature": 0,
+    "output_budget": 2048,
+    "runs_per_task": 1
+  },
+  "evidence": []
 }

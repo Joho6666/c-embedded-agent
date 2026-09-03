@@ -22,7 +22,13 @@ def _base() -> str:
         raise LLMError(str(e)) from e
 
 
-async def chat(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+async def chat(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    *,
+    temperature: float | None = 0.1,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
     if not settings.llm_api_key:
         raise LLMError("未配置 LLM_API_KEY")
     if not settings.llm_model:
@@ -30,8 +36,11 @@ async def chat(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | Non
     payload: dict[str, Any] = {
         "model": settings.llm_model,
         "messages": messages,
-        "temperature": 0.1,
     }
+    if temperature is not None:
+        payload["temperature"] = temperature
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"

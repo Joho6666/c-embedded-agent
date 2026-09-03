@@ -14,13 +14,11 @@ from pydantic import BaseModel, Field
 from app.agent.runtime import RUNS, AgentRun, event_stream, request_stop, resolve_approval, run_agent
 from app.config.settings import settings
 from app.db import list_runs, load_run
-from app.tools.compiler import CompileError, compile_project
+from app.platforms.registry import default_registry
 from app.tools.detect import connected_devices, environment_status, gcc_installed, tool_status
 from app.tools.error_memory import get_error, list_errors, record_from_output
 from app.tools.filesystem import list_files, read_file, write_file
-from app.tools.flash import FlashError, flash_elf
 from app.tools.gitutil import restore_snapshot
-from app.tools.hardware_run import auto_debug, run_pipeline
 from app.tools.ioc import parse_ioc
 from app.tools.knowledge import ingest_pdf, retrieve_knowledge
 from app.tools.serialutil import connect as serial_connect
@@ -29,7 +27,6 @@ from app.tools.serialutil import list_ports, read_available, status as serial_st
 from app.tools.skills import benchmark_wrap, get_skill, list_skills
 from app.tools.hw_session import load_session, save_session
 from app.tools.project_scan import import_existing_project, scan_existing_project
-from app.validation import validate_project
 from app.workspace.manager import create_project, list_projects, project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
 
@@ -62,8 +59,12 @@ class ApproveBody(BaseModel):
 
 class CreateProjectBody(BaseModel):
     name: str = "STM32 LED"
-    mcu: str = "STM32F103C8T6"
-    framework: str = "HAL"
+    mcu: str | None = None
+    framework: str | None = None
+    platform: str | None = None
+    board: str | None = None
+    adapterId: str | None = None
+    toolchain: str | None = None
 
 
 class WriteFileBody(BaseModel):
@@ -140,6 +141,18 @@ def health() -> dict[str, Any]:
 @app.get("/api/version")
 def version() -> dict[str, Any]:
     return _version_payload()
+
+
+@app.get("/api/platforms")
+def platforms() -> list[dict[str, Any]]:
+    return default_registry(settings.repo_root).list_platforms()
+
+
+def _project_adapter(root: Path):
+    resolution = default_registry(settings.repo_root).detect(root)
+    if resolution.status != "resolved" or resolution.adapter is None:
+        raise HTTPException(422, resolution.reason or "unsupported platform")
+    return resolution.adapter
 
 
 @app.get("/api/metrics")
@@ -225,7 +238,9 @@ def hardware_run(body: HardwareRunBody) -> dict[str, Any]:
         root = project_root(body.projectId)
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    return run_pipeline(root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect, task=body.task)
+    return _project_adapter(root).hardware_run(
+        root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect, task=body.task
+    ).to_dict()
 
 
 @app.post("/api/hardware/auto-debug")
@@ -234,7 +249,9 @@ def hardware_auto_debug(body: HardwareRunBody) -> dict[str, Any]:
         root = project_root(body.projectId)
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    return auto_debug(root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect)
+    return _project_adapter(root).auto_debug(
+        root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect, task=body.task
+    ).to_dict()
 
 
 @app.get("/api/validation")
@@ -245,12 +262,15 @@ def validation_get(projectId: str = "", prompt: str = "") -> dict[str, Any]:
         root = project_root(projectId)
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    return validate_project(root, prompt)
+    return _project_adapter(root).validate_static(root, prompt).to_dict()
 
 
 @app.post("/api/projects/scan-existing")
 def scan_existing(body: ImportExistingBody) -> dict[str, Any]:
-    return scan_existing_project(Path(body.path))
+    result = scan_existing_project(Path(body.path))
+    if not result.get("ok"):
+        raise HTTPException(422, result.get("reason") or "unsupported project")
+    return result
 
 
 @app.post("/api/projects/import-existing")
@@ -258,7 +278,10 @@ def import_existing(body: ImportExistingBody) -> dict[str, Any]:
     src = Path(body.path)
     if not src.is_dir():
         raise HTTPException(400, "path is not a directory")
-    return import_existing_project(src, body.name)
+    result = import_existing_project(src, body.name)
+    if not result.get("ok"):
+        raise HTTPException(422, result.get("reason") or "unsupported project")
+    return result
 
 
 @app.get("/api/projects/{project_id}/hardware-session")
@@ -350,7 +373,17 @@ def projects() -> list[dict[str, Any]]:
 
 @app.post("/api/projects")
 def new_project(body: CreateProjectBody) -> dict[str, Any]:
-    return create_project(body.name, body.mcu, body.framework)
+    try:
+        legacy_default = not any((body.adapterId, body.platform, body.mcu, body.framework))
+        return create_project(
+            body.name,
+            body.mcu or ("STM32F103C8T6" if legacy_default else None),
+            body.framework or ("HAL" if legacy_default else None),
+            platform=body.platform, board=body.board,
+            adapter_id=body.adapterId, toolchain=body.toolchain,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
 
 
 @app.get("/api/projects/{project_id}/files")
@@ -381,14 +414,12 @@ def file_put(project_id: str, body: WriteFileBody) -> dict[str, str]:
 @app.post("/api/projects/{project_id}/build")
 def build(project_id: str) -> dict[str, Any]:
     try:
-        result = compile_project(project_root(project_id))
+        root = project_root(project_id)
+        result = _project_adapter(root).build(root).to_dict()
         record_from_output(str(result.get("combined") or ""), success=bool(result.get("success")))
         return result
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    except CompileError as e:
-        record_from_output(str(e), success=False)
-        return {"success": False, "error": str(e), "diagnostics": [], "artifacts": []}
 
 
 @app.get("/api/projects/{project_id}/artifacts")
@@ -422,11 +453,13 @@ def artifact_download(project_id: str, name: str) -> FileResponse:
 @app.post("/api/projects/{project_id}/flash")
 def flash(project_id: str) -> dict[str, Any]:
     try:
-        return flash_elf(project_root(project_id))
+        root = project_root(project_id)
+        result = _project_adapter(root).flash(root).to_dict()
+        if result.get("status") == "FAIL":
+            raise HTTPException(400, result.get("reason") or "flash failed")
+        return result
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    except FlashError as e:
-        raise HTTPException(400, str(e)) from None
 
 
 @app.post("/api/runs")

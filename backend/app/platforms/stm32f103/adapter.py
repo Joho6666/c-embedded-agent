@@ -7,12 +7,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from app.mcu.stm32f103 import get_mcu_info, load_board
+from app.mcu.stm32f103 import get_mcu_info, get_pin_info, load_board
 from app.platforms.base import DetectionEvidence, LineCallback, PlatformAdapter, PlatformDescriptor, PlatformResult
 from app.tools.compiler import CompileError, compile_project, compile_project_streaming
 from app.tools.flash import ALLOWED_INTERFACE, ALLOWED_TARGET, FlashError, detect_chip_id, flash_elf
-from app.tools.hardware_run import run_pipeline, sample_serial
+from app.tools.hardware_run import auto_debug as stm32_auto_debug, run_pipeline, sample_serial
 from app.tools.ioc import parse_ioc
+from app.tools.hal_modules import register_hal_module
 from app.tools.periph_gen import configure_peripheral
 from app.tools.serialutil import list_ports
 from app.tools.toolchain import prepend_toolchain_path
@@ -180,9 +181,11 @@ class Stm32F103Adapter(PlatformAdapter):
             "adapterId": self.adapter_id,
             "framework": self.descriptor.framework,
             "mcu": defaults.get("name"),
+            "core": defaults.get("core"),
             "clockMHz": defaults.get("clock_mhz"),
             "flashKb": defaults.get("flash_kb"),
             "ramKb": defaults.get("ram_kb"),
+            "toolchain": "ARM_GCC",
         }
         sources = ["adapter defaults"]
         board = load_board(self.repo_root)
@@ -201,6 +204,12 @@ class Stm32F103Adapter(PlatformAdapter):
                     facts[dst] = ioc_analysis[src]
             sources.append("IOC")
         return {"facts": facts, "sources": sources, "ioc": ioc_analysis}
+
+    def mcu_info(self, root: Path) -> dict[str, Any]:
+        return get_mcu_info()
+
+    def pin_info(self, pin: str) -> dict[str, Any]:
+        return get_pin_info(pin)
 
     def toolchain_status(self) -> dict[str, Any]:
         prepend_toolchain_path()
@@ -277,6 +286,10 @@ class Stm32F103Adapter(PlatformAdapter):
         result = configure_peripheral(Path(root), kind, dict(args or {}))
         return PlatformResult("PASS" if result.get("ok") else "FAIL", "generate", self.adapter_id, result, reason=result.get("reason"))
 
+    def register_module(self, root: Path, module: str) -> PlatformResult:
+        result = register_hal_module(Path(root), module)
+        return PlatformResult("PASS" if result.get("ok") else "FAIL", "register-module", self.adapter_id, result)
+
     def validate_static(self, root: Path, task: str = "") -> PlatformResult:
         result = validate_project(Path(root), task)
         return PlatformResult("PASS" if result.get("passed") else "FAIL", "validate", self.adapter_id, result, evidence=list(result.get("kinds") or select_validators(task)))
@@ -302,6 +315,15 @@ class Stm32F103Adapter(PlatformAdapter):
         val_status = str((result.get("validation") or {}).get("status") or "UNAVAILABLE").upper()
         status = val_status if val_status in {"PASS", "FAIL", "UNAVAILABLE"} else "FAIL"
         return PlatformResult(status, "hardware-run", self.adapter_id, result, reason=(result.get("validation") or {}).get("reason"), evidence=["STM32F1 probe detected"])
+
+    def auto_debug(self, root: Path, *, serial_device: str | None = None, baud: int = 115200, expect: str | None = None, task: str = "") -> PlatformResult:
+        chip = detect_chip_id()
+        if not chip.get("available") or chip.get("family") != "STM32F1":
+            return PlatformResult.unavailable("auto-debug", self.adapter_id, "no verified STM32F1 probe evidence")
+        result = stm32_auto_debug(Path(root), serial_device=serial_device, baud=baud, expect=expect)
+        final = result.get("final") or {}
+        status = "PASS" if (final.get("validation") or {}).get("status") == "pass" else "FAIL"
+        return PlatformResult(status, "auto-debug", self.adapter_id, result, evidence=["STM32F1 probe detected"])
 
 
 def _norm(value: Any) -> str:

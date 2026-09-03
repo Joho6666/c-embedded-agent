@@ -146,7 +146,7 @@ def default_registry(repo_root: Path) -> PlatformRegistry:
     registry = PlatformRegistry()
     registry.register(
         Stm32F103Adapter(root),
-        aliases=("stm32", "stm32f1", "stm32f103", "stm32f103c8", "blue-pill", "hal"),
+        aliases=("stm32", "stm32f1", "stm32f103", "stm32f103c8", "stm32f103c8tx", "blue-pill", "hal"),
     )
     registry.register(
         Esp32S3IdfAdapter(root),

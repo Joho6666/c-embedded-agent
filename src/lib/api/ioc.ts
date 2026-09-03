@@ -65,7 +65,7 @@ export async function scanExistingProject(path: string): Promise<ExistingProject
 export async function importExistingProject(path: string, name?: string): Promise<ExistingProjectResult> {
   try {
     const data = await apiFetch<Record<string, unknown>>("/api/projects/import-existing", { method: "POST", body: JSON.stringify({ path, name }) });
-    return { available: true, ...data };
+    return { available: true, ...data, id: String(data.id ?? data.projectId ?? "") || undefined };
   } catch (e) {
     return { available: false, reason: e instanceof Error ? e.message : "Backend capability unavailable" };
   }

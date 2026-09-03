@@ -25,7 +25,9 @@ def gcc_ok() -> bool:
 
 
 def llm_ok() -> bool:
-    return bool(os.environ.get("LLM_API_KEY") and os.environ.get("LLM_BASE_URL") and os.environ.get("LLM_MODEL"))
+    from app.config.settings import settings
+
+    return bool(settings.llm_api_key and settings.llm_base_url and settings.llm_model)
 
 
 def load_tasks() -> list[dict]:
@@ -58,6 +60,18 @@ def semantic_ok(project_root: Path, prompt: str) -> bool:
     return bool(r.get("passed")) or float(r.get("score") or 0) >= 0.8
 
 
+async def agent_chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
+    """Pin the Agent arm to the same generation controls as the baseline."""
+    from app.services.llm import chat
+
+    return await chat(
+        messages,
+        tools,
+        temperature=0,
+        max_tokens=OUTPUT_BUDGET,
+    )
+
+
 def baseline_write(project_root: Path, prompt: str) -> dict:
     """LLM dumps code with no tools — comparison only."""
     from app.services.llm import LLMError, chat
@@ -68,7 +82,9 @@ def baseline_write(project_root: Path, prompt: str) -> dict:
             [
                 {"role": "system", "content": "只输出完整 main.c，不要解释。不要使用知识库、Skill、Error Memory 或编译修复循环。"},
                 {"role": "user", "content": prompt},
-            ]
+            ],
+            temperature=0,
+            max_tokens=OUTPUT_BUDGET,
         )
         text = data["choices"][0]["message"].get("content") or ""
         usage = data.get("usage") or {}
@@ -96,12 +112,12 @@ def empty_summary(*, gcc: bool, llm: bool, skipped: list[str], model: str) -> di
         "status": "SKIPPED",
         "model": model,
         "tasks": 0,
-        "firstBuildSuccess": 0.0,
-        "finalCompileSuccess": 0.0,
-        "autoFixSuccess": 0.0,
-        "semanticValidation": 0.0,
-        "avgIterations": 0.0,
-        "avgLatency": 0.0,
+        "firstBuildSuccess": None,
+        "finalCompileSuccess": None,
+        "autoFixSuccess": None,
+        "semanticValidation": None,
+        "avgIterations": None,
+        "avgLatency": None,
         "inputTokens": 0,
         "outputTokens": 0,
         "gcc": gcc,
@@ -148,36 +164,56 @@ def main() -> int:
     summary_path = TASK_DIR / "latest-summary.json"
     comparison_path = ROOT / "benchmarks" / "comparison-summary.json"
 
-    if not gcc_ok():
-        skipped = ["arm-none-eabi-gcc or make missing"]
+    missing = []
+    if not out["gcc"]:
+        missing.append("arm-none-eabi-gcc or make missing")
+    if not out["llm"]:
+        missing.append("LLM not configured")
+    if missing:
+        skipped = missing
         out["skipped"] = skipped
         out["status"] = "SKIPPED"
+        out.update(
+            {
+                "first_build_success_rate": None,
+                "compile_success_rate": None,
+                "auto_fix_success_rate": None,
+                "semantic_success_rate": None,
+                "avg_iterations": None,
+            }
+        )
         write_json(TASK_DIR / "results.json", out)
-        write_json(summary_path, empty_summary(gcc=False, llm=llm_ok(), skipped=skipped, model=model))
-        write_json(comparison_path, {"status": "SKIPPED", "tasks": 0, "skipped": skipped, "reason": "toolchain missing — not faking scores", "environment": out["environment"], "evidence": []})
+        write_json(summary_path, empty_summary(gcc=out["gcc"], llm=out["llm"], skipped=skipped, model=model))
+        write_json(
+            comparison_path,
+            {
+                "status": "SKIPPED",
+                "tasks": 0,
+                "model": model,
+                "baselineCompileSuccess": None,
+                "agentCompileSuccess": None,
+                "baselineValidation": None,
+                "agentValidation": None,
+                "skipped": skipped,
+                "reason": "; ".join(skipped) + " — not faking scores",
+                "environment": out["environment"],
+                "evidence": [],
+            },
+        )
         print(json.dumps(out, indent=2))
-        print("SKIP: ARM GCC not installed — not faking success")
-        return 0
-    if not llm_ok():
-        skipped = ["LLM not configured"]
-        from app.workspace.manager import create_project, project_root
-
-        meta = create_project("bench-template")
-        result = run_build(project_root(meta["id"]))
-        out["skipped"] = skipped
-        out["status"] = "SKIPPED"
-        out["template_build"] = bool(result.get("success"))
-        write_json(TASK_DIR / "results.json", out)
-        write_json(summary_path, empty_summary(gcc=True, llm=False, skipped=skipped, model=model))
-        write_json(comparison_path, {"status": "SKIPPED", "tasks": 0, "skipped": skipped, "reason": "LLM not configured — not faking Agent vs Baseline", "environment": out["environment"], "evidence": [{"kind": "template-build", "passed": bool(result.get("success"))}]})
-        print(json.dumps(out, indent=2))
-        print("SKIP: LLM not configured — template compile recorded only")
+        print(f"SKIP: {'; '.join(skipped)} — benchmark not run")
         return 0
 
     from app.workspace.manager import create_project, project_root
-    from app.agent.runtime import AgentRun, run_agent
+    from app.agent import runtime as agent_runtime
     import asyncio
     import uuid
+
+    # Runtime keeps its backwards-compatible call signature; the harness pins the
+    # exact same generation settings used by the plain-LLM baseline.
+    agent_runtime.chat = agent_chat
+    AgentRun = agent_runtime.AgentRun
+    run_agent = agent_runtime.run_agent
 
     iterations = []
     latencies = []

@@ -1,17 +1,24 @@
 {
+  "status": "SKIPPED",
   "model": "",
   "tasks": 0,
-  "firstBuildSuccess": 0.0,
-  "finalCompileSuccess": 0.0,
-  "autoFixSuccess": 0.0,
-  "semanticValidation": 0.0,
-  "avgIterations": 0.0,
-  "avgLatency": 0.0,
+  "firstBuildSuccess": null,
+  "finalCompileSuccess": null,
+  "autoFixSuccess": null,
+  "semanticValidation": null,
+  "avgIterations": null,
+  "avgLatency": null,
   "inputTokens": 0,
   "outputTokens": 0,
   "gcc": true,
   "llm": false,
   "skipped": [
     "LLM not configured"
-  ]
+  ],
+  "environment": {
+    "temperature": 0,
+    "outputBudget": 2048,
+    "runsPerTask": 1
+  },
+  "evidence": []
 }

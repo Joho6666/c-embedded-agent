@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
 from app.config.settings import settings
+from app.platforms.registry import default_registry
 from app.tools.gitutil import init_repo
 
 
@@ -22,26 +22,32 @@ def _ws_root() -> Path:
     return p.resolve()
 
 
-def create_project(name: str, mcu: str = "STM32F103C8T6", framework: str = "HAL") -> dict[str, Any]:
+def create_project(
+    name: str,
+    mcu: str | None = "STM32F103C8T6",
+    framework: str | None = "HAL",
+    *,
+    platform: str | None = None,
+    board: str | None = None,
+    adapter_id: str | None = None,
+    toolchain: str | None = None,
+) -> dict[str, Any]:
+    resolution = default_registry(settings.repo_root).resolve_explicit(
+        adapter_id=adapter_id, platform=platform, mcu=mcu, framework=framework
+    )
+    if resolution.status != "resolved" or resolution.adapter is None:
+        raise ValueError(resolution.reason or "unsupported platform")
     pid = uuid.uuid4().hex[:12]
     dest = _ws_root() / pid
-    src = settings.template_root
-    if not src.is_absolute():
-        src = Path.cwd() / src
-    if not src.is_dir():
-        raise FileNotFoundError(f"template missing: {src}")
-    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("*.elf", "*.hex", "*.bin", "*.o", "*.map", ".git"))
-    meta = {
-        "id": pid,
-        "name": name,
-        "platform": "STM32",
-        "mcu": mcu,
-        "framework": framework,
-        "toolchain": "ARM_GCC",
-        "board": "Blue Pill",
-        "led": "PC13",
-    }
-    (dest / "project.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    result = resolution.adapter.create_template(
+        dest,
+        name=name,
+        board=board,
+        metadata={"id": pid, **({"toolchain": toolchain} if toolchain else {})},
+    )
+    if not result.success:
+        raise ValueError(result.reason or "project template creation failed")
+    meta = dict(result.data.get("metadata") or {})
     init_repo_safe(dest)
     return meta
 

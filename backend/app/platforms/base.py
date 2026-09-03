@@ -144,6 +144,12 @@ class PlatformAdapter(ABC):
     def load_context(self, root: Path) -> dict[str, Any]:
         raise NotImplementedError
 
+    def mcu_info(self, root: Path) -> dict[str, Any]:
+        return dict(self.load_context(root).get("facts") or {})
+
+    def pin_info(self, pin: str) -> dict[str, Any]:
+        return {"pin": pin.strip().upper(), "found": False, "functions": []}
+
     @abstractmethod
     def toolchain_status(self) -> dict[str, Any]:
         raise NotImplementedError
@@ -177,6 +183,9 @@ class PlatformAdapter(ABC):
     def generate_peripheral(self, root: Path, kind: str, args: Mapping[str, Any] | None = None) -> PlatformResult:
         return PlatformResult.unavailable("generate", self.adapter_id, f"unsupported peripheral: {kind}")
 
+    def register_module(self, root: Path, module: str) -> PlatformResult:
+        return PlatformResult.unavailable("register-module", self.adapter_id, f"module registration is unsupported: {module}")
+
     def validate_static(self, root: Path, task: str = "") -> PlatformResult:
         return PlatformResult.unavailable("validate", self.adapter_id, "static validation is unavailable")
 
@@ -201,6 +210,17 @@ class PlatformAdapter(ABC):
         max_hw_iterations: int = 3,
     ) -> PlatformResult:
         return PlatformResult.unavailable("hardware-run", self.adapter_id, "hardware runner is unavailable")
+
+    def auto_debug(
+        self,
+        root: Path,
+        *,
+        serial_device: str | None = None,
+        baud: int = 115200,
+        expect: str | None = None,
+        task: str = "",
+    ) -> PlatformResult:
+        return PlatformResult.unavailable("auto-debug", self.adapter_id, "hardware auto-debug is unavailable")
 
     @staticmethod
     def copy_template(source: Path, destination: Path) -> None:

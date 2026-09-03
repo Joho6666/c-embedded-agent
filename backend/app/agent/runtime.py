@@ -9,74 +9,44 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from app.agent.context import build_context, context_prompt
+from app.agent.context_router import replace_current_context
 from app.agent.planner import looks_complex, make_plan
+from app.agent.skill_router import SkillRouter
+from app.agent.task_classifier import TaskClassifier
+from app.agent.workflow_router import WorkflowRouter
 from app.config.settings import settings
 from app.db import finish_run, save_build, save_event, save_file_change, save_model_call, save_run
-from app.mcu.stm32f103 import get_mcu_info, get_pin_info, load_board
+from app.platforms.base import PlatformAdapter
+from app.platforms.registry import default_registry
 from app.services.llm import LLMError, chat
 from app.tools.analysis import clangd_diagnostics, cppcheck_project
-from app.tools.compiler import CompileError, compile_project_streaming
 from app.tools.filesystem import list_files, read_file, write_file
 from app.tools.gitutil import snapshot
 from app.tools.knowledge import format_citation, retrieve_knowledge
 from app.tools.patch import PatchError, apply_patch, preview_patch
 from app.tools.search import search_code
-from app.tools.error_memory import apply_known_fix, list_errors, mark_fix_result, record_from_output, match_known_errors
+from app.tools.error_memory import apply_known_fix, list_errors, mark_fix_result, record_from_output
 from app.tools.debug_read import read_register, read_symbol
-from app.tools.flash import FlashError, flash_elf
-from app.tools.hardware_run import run_pipeline, sample_serial
 from app.tools.skills import get_skill, skill_summary
-from app.tools.hal_modules import register_hal_module
-from app.tools.periph_gen import configure_peripheral
-from app.tools.validate import inspect_usart, validate_led_task
-from app.validation import validate_project
+from app.tools.registry import ToolArgumentsError, ToolRegistryError, default_tool_registry
 from app.workspace.manager import project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
-from app.agent.context import led_from_ioc, load_ioc_analysis
 
-SYSTEM = """你是一名资深嵌入式 C 工程师，目标是让 STM32F103C8T6 HAL 工程真实编译链接。
+SYSTEM = """你是一名资深嵌入式 C 工程师，目标是让当前已注册平台的工程真实构建并保留证据。
 规则：
 1. 先读工程，不要先写代码。
 2. 不知道 API 就 retrieve_knowledge。
-3. 不知道 Pin 就 get_pin_info / get_mcu_info。
+3. 不知道平台或 Pin 就 get_pin_info / get_mcu_info。
 4. 修改最少文件；优先 apply_patch，不要整文件覆盖。
 5. 不要修改 Drivers、startup、链接脚本、Makefile，除非用户处于 advanced 模式。
 6. 优先修改 Core/Src 和 Core/Inc。
 7. 每次修改后 compile_project。
 8. 根据真实 GCC/LD Error 修复。
 9. Build 成功以后可以参考静态分析，但不能把分析失败当成编译失败。
-10. 不允许声称成功，除非 compiler exit code == 0。
-禁止凭空编造寄存器、HAL API、GPIO、头文件，禁止擅自修改 MCU 型号。无板时 read_register/read_symbol 只能报 UNAVAILABLE。
-Blue Pill 板载 LED 默认 PC13，不是 PA5。
-USART1 默认 PA9 TX / PA10 RX。
+10. 不允许声称成功，除非平台构建器返回 PASS 且有真实产物证据。
+禁止凭空编造寄存器、SDK API、GPIO、头文件，禁止擅自修改 MCU 型号。无设备证据时设备工具只能报 UNAVAILABLE。
 """
 
-TOOLS = [
-    {"type": "function", "function": {"name": "list_files", "description": "列出工程文件", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "read_file", "description": "读取工程内文件", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "write_file", "description": "写入工程内文件（整文件）。优先用 apply_patch。", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}},
-    {"type": "function", "function": {"name": "apply_patch", "description": "对工程文件应用 unified diff", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "patch": {"type": "string"}}, "required": ["path", "patch"]}}},
-    {"type": "function", "function": {"name": "search_code", "description": "在工程内搜索字符串", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
-    {"type": "function", "function": {"name": "compile_project", "description": "在工程根目录执行 make", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "retrieve_knowledge", "description": "检索 STM32 知识库", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
-    {"type": "function", "function": {"name": "get_mcu_info", "description": "STM32F103C8T6 结构化信息", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "get_pin_info", "description": "查询引脚复用", "parameters": {"type": "object", "properties": {"pin": {"type": "string"}}, "required": ["pin"]}}},
-    {"type": "function", "function": {"name": "flash_firmware", "description": "用 OpenOCD ST-Link 烧录 firmware.elf。无调试器时返回失败，不要假装成功。", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "serial_read", "description": "打开串口并自适应等待（有 expect 则匹配到即停，否则安静后停，最长约 8 秒）。baud 仅 9600 或 115200。", "parameters": {"type": "object", "properties": {"device": {"type": "string"}, "baud": {"type": "integer"}, "expect": {"type": "string"}}, "required": ["device"]}}},
-    {"type": "function", "function": {"name": "read_register", "description": "只读 Cortex-M 故障寄存器 allowlist：CFSR/HFSR/MMFAR/BFAR/DBGMCU。无板返回 UNAVAILABLE，禁止编造数值。", "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}},
-    {"type": "function", "function": {"name": "read_symbol", "description": "从 firmware.elf 查符号地址（nm）。无 elf/无工具链返回 UNAVAILABLE，不要编造地址。", "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}},
-    {"type": "function", "function": {"name": "run_on_device", "description": "Build→Flash→Serial→Validate。无板/无串口标 unavailable。", "parameters": {"type": "object", "properties": {"device": {"type": "string"}, "baud": {"type": "integer"}, "expect": {"type": "string"}}}}},
-    {"type": "function", "function": {"name": "load_skill", "description": "加载外设 Skill 摘要（USART/DMA/TIM…）", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
-    {"type": "function", "function": {"name": "search_error_memory", "description": "搜索已知编译/链接错误修复", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "tag": {"type": "string"}}, "required": ["query"]}}},
-    {"type": "function", "function": {"name": "apply_error_memory_fix", "description": "仅应用已知机械修复（Makefile HAL source / IRQ stub）。未知错误不要调用。", "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
-    {"type": "function", "function": {"name": "register_hal_module", "description": "安全登记 HAL 模块到 Makefile + stm32f1xx_hal_conf.h，去重。不要手改 Makefile。", "parameters": {"type": "object", "properties": {"module": {"type": "string"}}, "required": ["module"]}}},
-    {"type": "function", "function": {"name": "configure_usart", "description": "按 Golden Recipe 生成 USART 初始化（Core/Src/usart.c）。LLM 只写业务逻辑。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}, "baud": {"type": "integer"}, "mode": {"type": "string"}}, "required": ["instance"]}}},
-    {"type": "function", "function": {"name": "configure_adc", "description": "按 Golden Recipe 生成 ADC 初始化。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}, "channel": {"type": "integer"}, "mode": {"type": "string"}}}}},
-    {"type": "function", "function": {"name": "configure_pwm", "description": "按 Golden Recipe 生成 TIM PWM 初始化。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}, "channel": {"type": "integer"}}}}},
-    {"type": "function", "function": {"name": "configure_i2c", "description": "按 Golden Recipe 生成 I2C 初始化。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}}}}},
-    {"type": "function", "function": {"name": "configure_spi", "description": "按 Golden Recipe 生成 SPI 初始化。", "parameters": {"type": "object", "properties": {"instance": {"type": "string"}}}}},
-    {"type": "function", "function": {"name": "configure_exti", "description": "按 Golden Recipe 生成 EXTI GPIO 中断初始化。", "parameters": {"type": "object", "properties": {"pin": {"type": "string"}, "edge": {"type": "string"}}}}},
-]
 
 
 def _now() -> str:
@@ -107,6 +77,7 @@ class AgentRun:
         self.serial_baud = 115200
         self.expect: str | None = None
         self.loaded_skills: list[dict[str, Any]] = []
+        self.write_approved = False
         self.input_tokens = 0
         self.output_tokens = 0
         self.latency_ms = 0
@@ -174,7 +145,7 @@ def resolve_approval(run: AgentRun, decision: str, approval_id: str | None = Non
     run.approval_event.set()
 
 
-def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun) -> str:
+def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun, adapter: PlatformAdapter) -> str:
     if name == "list_files":
         return "\n".join(list_files(root))
     if name == "read_file":
@@ -186,9 +157,9 @@ def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun) -> st
         run.citations.extend(hits)
         return json.dumps(hits, ensure_ascii=False)
     if name == "get_mcu_info":
-        return json.dumps(get_mcu_info(), ensure_ascii=False)
+        return json.dumps(adapter.mcu_info(root), ensure_ascii=False)
     if name == "get_pin_info":
-        return json.dumps(get_pin_info(str(args.get("pin", ""))), ensure_ascii=False)
+        return json.dumps(adapter.pin_info(str(args.get("pin", ""))), ensure_ascii=False)
     if name == "load_skill":
         item = get_skill(str(args.get("id", "")))
         if not item:
@@ -217,7 +188,7 @@ def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun) -> st
         )
         return json.dumps(fix, ensure_ascii=False)
     if name == "register_hal_module":
-        out = register_hal_module(root, str(args.get("module", "")))
+        out = adapter.register_module(root, str(args.get("module", ""))).to_dict()
         run.emit(
             type="tool_call",
             status="success" if out.get("ok") else "failed",
@@ -227,7 +198,7 @@ def _exec_sync(name: str, args: dict[str, Any], root: Path, run: AgentRun) -> st
         return json.dumps(out, ensure_ascii=False)
     if name.startswith("configure_"):
         kind = name.replace("configure_", "")
-        out = configure_peripheral(root, kind, args)
+        out = adapter.generate_peripheral(root, kind, args).to_dict()
         run.emit(
             type="tool_call",
             status="success" if out.get("ok") else "failed",
@@ -274,7 +245,17 @@ async def _await_approval(run: AgentRun, approval_id: str) -> str:
     return run.approval_decision
 
 
-async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str) -> str:
+async def _approve_tool(run: AgentRun, name: str, args: dict[str, Any], reason: str | None) -> bool:
+    approval_id = uuid.uuid4().hex[:10]
+    run.emit(
+        type="approval", status="waiting_approval", title=f"批准工具：{name}",
+        description=reason, tool={"name": name, "arguments": args},
+        requiresApproval=True, approvalId=approval_id,
+    )
+    return await _await_approval(run, approval_id) == "approved"
+
+
+async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str, *, force_approval: bool = False) -> str:
     if run.cancelled():
         return "RUN_STOPPED"
     before = ""
@@ -283,7 +264,7 @@ async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str) -
     except FileNotFoundError:
         before = ""
     approval_id = uuid.uuid4().hex[:10]
-    gated = run.mode == "code"
+    gated = run.mode == "code" or force_approval
     run.emit(
         type="file_diff",
         status="waiting_approval" if gated else "success",
@@ -303,10 +284,11 @@ async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str) -
             return "rejected" if decision != "RUN_STOPPED" else decision
     write_file(root, path, content, advanced=run.advanced)
     save_file_change(run.id, path, before, content)
+    run.write_approved = True
     return "ok"
 
 
-async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str) -> str:
+async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str, *, force_approval: bool = False) -> str:
     if run.cancelled():
         return "RUN_STOPPED"
     before = read_file(root, path)
@@ -314,7 +296,7 @@ async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str) -> 
         proposed = preview_patch(before, patch)
     except PatchError as e:
         return str(e)
-    gated = run.mode == "code"
+    gated = run.mode == "code" or force_approval
     approval_id = uuid.uuid4().hex[:10]
     run.emit(
         type="file_diff",
@@ -338,39 +320,18 @@ async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str) -> 
     except PatchError as e:
         return str(e)
     save_file_change(run.id, path, before, after)
+    run.write_approved = True
     return "ok"
 
 
-async def _apply_known_fixes(run: AgentRun, root: Path, compiled: dict[str, Any]) -> dict[str, Any]:
-    """Deterministic Error Memory: known signature → fix → rebuild. Unknown errors stay for the LLM."""
-    text = str(compiled.get("combined") or "")
-    hits = match_known_errors(text)
-    applied = False
-    for hit in hits:
-        if not hit.get("mechanical"):
-            continue
-        fix = apply_known_fix(root, hit["id"])
-        run.emit(
-            type="tool_call",
-            status="success" if fix.get("applied") else "failed",
-            title=f"Known Fix {hit['id']}",
-            description=json.dumps(fix, ensure_ascii=False)[:800],
-        )
-        if fix.get("applied"):
-            applied = True
-            compiled = await _compile(run, root)
-            mark_fix_result(hit["id"], success=bool(compiled.get("success")))
-            if compiled.get("success"):
-                return compiled
-    return compiled if applied else compiled
 
 
-async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
+async def _compile(run: AgentRun, root: Path, adapter: PlatformAdapter) -> dict[str, Any]:
     async def on_line(stream: str, line: str) -> None:
         run.emit(type="terminal", status="running", title="make", stream=stream, content=line, output=line)
 
-    result = await compile_project_streaming(root, on_line)
-    combined = str(result.get("combined") or "")
+    result = (await adapter.build_streaming(root, on_line)).to_dict()
+    combined = str(result.get("combined") or result.get("reason") or "")
     hits = record_from_output(combined, success=bool(result.get("success")))
     run.last_errors = [d for d in result.get("diagnostics") or [] if d.get("severity") == "error"]
     if not result.get("success") and hits:
@@ -404,7 +365,7 @@ async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
         status="success" if result["success"] else "failed",
         title="构建成功" if result["success"] else "构建失败",
         output=result["combined"][-4000:],
-        tool={"name": "make", "command": "make -j4", "exitCode": result["exit_code"]},
+        tool={"name": "platform-build", "command": adapter.adapter_id, "exitCode": result.get("exit_code")},
         diagnostics=diags,
         artifacts=arts,
     )
@@ -418,27 +379,13 @@ async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
             description=f"Flash {mem.get('flash', '?')} B · RAM {mem.get('ram', '?')} B",
             artifacts=arts,
         )
-        ioc = load_ioc_analysis(root)
-        pin = led_from_ioc(ioc)
-        led = validate_led_task(root, pin)
-        usart = inspect_usart(root)
-        semantic = validate_project(root, run.prompt)
+        semantic = adapter.validate_static(root, run.prompt).to_dict()
         run.emit(
             type="validation",
-            status="success" if semantic.get("passed") or led["passed"] else "failed",
-            title=f"静态校验 score={semantic.get('score', led['score'])} pin={pin}",
-            description=json.dumps(
-                {
-                    "method": "static_source",
-                    "led": led["checks"],
-                    "usart": usart.get("checks"),
-                    "semantic": semantic,
-                },
-                ensure_ascii=False,
-            ),
+            status="success" if semantic.get("success") else "failed",
+            title=f"静态校验 · {adapter.adapter_id}",
+            description=json.dumps(semantic, ensure_ascii=False),
         )
-        if _wants_device(run.prompt):
-            await _maybe_run_on_device(run, root)
         clang = clangd_diagnostics(root)
         if clang.get("available") and clang.get("diagnostics"):
             run.emit(type="diagnostic", status="success", title="clangd", description=str(clang["diagnostics"][:8]))
@@ -493,34 +440,29 @@ def _emit_pipeline(run: AgentRun, pipeline: dict[str, Any]) -> None:
         )
 
 
-async def _maybe_run_on_device(run: AgentRun, root: Path) -> None:
-    device = run.serial_device
-    pipeline = run_pipeline(root, serial_device=device, baud=run.serial_baud, expect=run.expect)
+async def _maybe_run_on_device(run: AgentRun, root: Path, adapter: PlatformAdapter) -> None:
+    pipeline = adapter.hardware_run(
+        root, serial_device=run.serial_device, baud=run.serial_baud, expect=run.expect, task=run.prompt
+    ).to_dict()
     _emit_pipeline(run, pipeline)
 
 
-async def _flash_tool(run: AgentRun, root: Path) -> str:
-    try:
-        data = flash_elf(root)
-    except FlashError as e:
-        run.emit(type="flash", status="failed", title="Flash", description=str(e))
-        return json.dumps({"success": False, "error": str(e)})
+async def _flash_tool(run: AgentRun, root: Path, adapter: PlatformAdapter) -> str:
+    data = adapter.flash(root, device=run.serial_device).to_dict()
     ok = bool(data.get("success"))
     run.emit(type="flash", status="success" if ok else "failed", title="Flash", output=str(data.get("output") or "")[-2000:])
     return json.dumps(data, ensure_ascii=False)[:8000]
 
 
-async def _serial_tool(run: AgentRun, args: dict[str, Any]) -> str:
+async def _serial_tool(run: AgentRun, args: dict[str, Any], adapter: PlatformAdapter) -> str:
     device = str(args.get("device") or run.serial_device or "")
     baud = int(args.get("baud") or run.serial_baud or 115200)
     if not device:
         run.emit(type="serial", status="failed", title="Serial", description="no serial device")
         return json.dumps({"available": False, "reason": "no serial device"})
-    try:
-        sample = sample_serial(device, baud, expect=str(args.get("expect") or run.expect or "") or None)
-    except (ValueError, RuntimeError, OSError) as e:
-        run.emit(type="serial", status="failed", title="Serial", description=str(e))
-        return json.dumps({"success": False, "error": str(e)})
+    sample = adapter.serial_sample(
+        device=device, baud=baud, expect=str(args.get("expect") or run.expect or "") or None
+    ).to_dict()
     lines = sample.get("lines") or []
     for i, line in enumerate(lines[:40]):
         run.emit(type="serial", status="success", title="Serial", output=f"[00:00.{i}] {line}")
@@ -546,7 +488,29 @@ async def run_agent(run: AgentRun) -> None:
         except Exception:
             run.snapshot_sha = ""
 
-        board = load_board(settings.repo_root)
+        resolution = default_registry(settings.repo_root).detect(root)
+        if resolution.status != "resolved" or resolution.adapter is None:
+            run.emit(type="error", status="failed", title="平台不可用", description=resolution.reason)
+            run.status = "failed"
+            finish_run(run.id, "failed")
+            return
+        adapter = resolution.adapter
+        classification = TaskClassifier().classify(run.prompt, platform=adapter.adapter_id)
+        workflow = WorkflowRouter().route(run.prompt, classification)
+        skill_selection = SkillRouter().select(
+            run.prompt, platform=adapter.adapter_id, context_level=workflow.context_level
+        )
+        run.loaded_skills = [skill.to_dict() for skill in skill_selection.skills]
+        tool_groups = {"read"} if run.mode == "plan" else set(workflow.allowed_tool_groups)
+        tool_schemas = default_tool_registry().schemas(groups=tool_groups)
+        run.emit(
+            type="routing", status="success", title="任务路由",
+            classification=classification.to_dict(), workflow=workflow.to_dict(),
+            contextLevel=workflow.context_level.value,
+            skills=[skill.id for skill in skill_selection.skills],
+            tools=[item["function"]["name"] for item in tool_schemas],
+            adapterId=adapter.adapter_id,
+        )
         plan = make_plan(run.prompt)
         run.emit(
             type="plan",
@@ -557,7 +521,8 @@ async def run_agent(run: AgentRun) -> None:
         )
         try:
             files = list_files(root)
-            run.emit(type="reasoning", status="success", title="扫描工程", description=f"{len(files)} 个文件 · LED={board.get('led', 'PC13')}")
+            facts = adapter.load_context(root).get("facts") or {}
+            run.emit(type="reasoning", status="success", title="扫描工程", description=f"{len(files)} 个文件 · {facts.get('mcu', adapter.adapter_id)}")
         except OSError as e:
             run.emit(type="error", status="failed", title="无法读取工程", description=str(e))
             run.status = "failed"
@@ -566,20 +531,18 @@ async def run_agent(run: AgentRun) -> None:
             return
 
         try:
-            await _llm_loop(run, root, board)
+            await _llm_loop(run, root, adapter, workflow, tool_schemas)
         except asyncio.CancelledError:
             run.status = "cancelled"
             raise
         except LLMError as e:
             run.emit(type="error", status="failed", title="LLM 不可用", description=str(e))
-            run.emit(type="compile", status="running", title="改为直接编译当前工程", tool={"name": "make", "command": "make -j4"})
-            await _compile(run, root)
-            run.status = "success" if run.status != "cancelled" and run.events and run.events[-1].get("status") == "success" else run.status
+            if run.mode != "plan" and (run.mode != "code" or run.write_approved):
+                run.emit(type="compile", status="running", title="改为直接构建当前工程", tool={"name": "platform-build", "command": adapter.adapter_id})
+                await _compile(run, root, adapter)
+                run.status = "success" if run.status != "cancelled" and run.events and run.events[-1].get("status") == "success" else run.status
             if run.status == "running":
                 run.status = "failed"
-        except CompileError as e:
-            run.emit(type="compile", status="failed", title="无法编译", description=str(e), output=str(e))
-            run.status = "failed"
         except PathEscapeError as e:
             run.emit(type="error", status="failed", title="路径非法", description=str(e))
             run.status = "failed"
@@ -611,13 +574,14 @@ async def run_agent(run: AgentRun) -> None:
             run.queue.put_nowait(None)
 
 
-async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
+async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflow: Any, tool_schemas: list[dict[str, Any]]) -> None:
+    platform_context = adapter.load_context(root)
     ctx = build_context(
         root,
         iteration=0,
-        board=board.get("board", "Blue Pill"),
         prompt=run.prompt,
         extra_skills=run.loaded_skills,
+        platform_context=platform_context,
     )
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM},
@@ -639,14 +603,14 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
             iteration=i + 1,
             errors=run.last_errors,
             knowledge=run.citations[-3:],
-            board=board.get("board", "Blue Pill"),
             prompt=run.prompt,
             extra_skills=run.loaded_skills,
+            platform_context=platform_context,
         )
-        messages.append({"role": "system", "content": "当前上下文：\n" + context_prompt(ctx)})
+        messages = replace_current_context(messages, context_prompt(ctx))
         run.emit(type="reasoning", status="running", title=f"第 {i + 1} 轮推理")
         t0 = time.perf_counter()
-        data = await chat(messages, TOOLS)
+        data = await chat(messages, tool_schemas)
         latency = int((time.perf_counter() - t0) * 1000)
         choice = data["choices"][0]["message"]
         messages.append(choice)
@@ -659,7 +623,14 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
         if not tool_calls:
             text = choice.get("content") or ""
             run.emit(type="reasoning", status="success", title="模型回复", description=text[:500])
-            result = await _compile(run, root)
+            if run.mode == "plan":
+                run.status = "success"
+                return
+            if run.mode == "code" and not run.write_approved:
+                run.emit(type="compile", status="failed", title="构建未执行", description="code 模式需要先批准修改")
+                run.status = "failed"
+                return
+            result = await _compile(run, root, adapter)
             run.status = "success" if result.get("success") else "failed"
             return
         for tc in tool_calls:
@@ -672,30 +643,55 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
             except json.JSONDecodeError:
                 args = {}
             run.emit(type="tool_call", status="running", title=fn, tool={"name": fn, "command": fn})
-            if run.mode == "plan" and fn in {"write_file", "apply_patch"}:
-                result = "plan 模式禁止写文件"
+            registry = default_tool_registry()
+            try:
+                spec = registry.get(fn)
+                args = spec.validate(args)
+                raw_path = str(args.get("path") or "").replace("\\", "/").lstrip("/")
+                protected = any(
+                    raw_path == item or raw_path.startswith(item.rstrip("/") + "/")
+                    for item in adapter.protected_paths
+                )
+                standard = raw_path.startswith(("Core/Src/", "Core/Inc/", "main/"))
+                authorization = registry.authorize(
+                    fn, run.mode, hardware_intent=bool(workflow.hardware_intent),
+                    protected_path=protected, write_approved=run.write_approved,
+                    contained_path=True, standard_write_path=standard,
+                )
+            except (ToolRegistryError, ToolArgumentsError) as exc:
+                result = json.dumps({"success": False, "status": "REJECTED", "reason": str(exc)}, ensure_ascii=False)
+                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": result})
+                continue
+            if not authorization.allowed:
+                result = json.dumps({"success": False, "status": "REJECTED", "reason": authorization.reason}, ensure_ascii=False)
             elif fn == "write_file":
                 try:
-                    result = await _write_with_diff(run, root, str(args.get("path", "")), str(args.get("content", "")))
+                    result = await _write_with_diff(
+                        run, root, str(args.get("path", "")), str(args.get("content", "")),
+                        force_approval=authorization.requires_approval,
+                    )
                 except ProtectedPathError as e:
                     result = f"PROTECTED: {e}"
             elif fn == "apply_patch":
                 try:
-                    result = await _patch_with_diff(run, root, str(args.get("path", "")), str(args.get("patch", "")))
+                    result = await _patch_with_diff(
+                        run, root, str(args.get("path", "")), str(args.get("patch", "")),
+                        force_approval=authorization.requires_approval,
+                    )
                 except (ProtectedPathError, FileNotFoundError) as e:
                     result = f"PATCH_FAILED: {e}"
+            elif authorization.requires_approval and not await _approve_tool(run, fn, args, authorization.reason):
+                result = json.dumps({"success": False, "status": "REJECTED", "reason": "approval rejected"})
             elif fn == "compile_project":
-                compiled = await _compile(run, root)
-                if not compiled.get("success"):
-                    compiled = await _apply_known_fixes(run, root, compiled)
+                compiled = await _compile(run, root, adapter)
                 result = json.dumps(compiled, ensure_ascii=False)
                 if compiled.get("success") and not _wants_device(run.prompt):
                     run.status = "success"
                     return
             elif fn == "flash_firmware":
-                result = await _flash_tool(run, root)
+                result = await _flash_tool(run, root, adapter)
             elif fn == "serial_read":
-                result = await _serial_tool(run, args)
+                result = await _serial_tool(run, args, adapter)
             elif fn == "run_on_device":
                 if args.get("device"):
                     run.serial_device = str(args.get("device"))
@@ -703,18 +699,24 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
                     run.serial_baud = int(args.get("baud"))
                 if args.get("expect"):
                     run.expect = str(args.get("expect"))
-                pipeline = run_pipeline(root, serial_device=run.serial_device, baud=run.serial_baud, expect=run.expect)
+                pipeline = adapter.hardware_run(
+                    root, serial_device=run.serial_device, baud=run.serial_baud,
+                    expect=run.expect, task=run.prompt,
+                ).to_dict()
                 _emit_pipeline(run, pipeline)
                 result = json.dumps(pipeline, ensure_ascii=False)[:8000]
             elif fn == "apply_error_memory_fix":
-                result = _exec_sync(fn, args, root, run)
-                compiled = await _compile(run, root)
+                result = _exec_sync(fn, args, root, run, adapter)
+                run.write_approved = True
+                compiled = await _compile(run, root, adapter)
                 eid = str(args.get("id", ""))
                 if eid:
                     mark_fix_result(eid, success=bool(compiled.get("success")))
                 result = json.dumps({"fix": json.loads(result) if result.startswith("{") else result, "compile": compiled.get("success")}, ensure_ascii=False)[:8000]
             else:
-                result = _exec_sync(fn, args, root, run)
+                result = _exec_sync(fn, args, root, run, adapter)
+                if spec.effect.value == "workspace_write" and '"success": false' not in result.lower():
+                    run.write_approved = True
                 if fn == "retrieve_knowledge":
                     run.emit(type="knowledge_result", status="success", title="知识检索", description=result[:800])
             messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": str(result)[:8000]})

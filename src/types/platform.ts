@@ -10,7 +10,7 @@ export interface PlatformCapability {
   boards: string[];
   frameworks: string[];
   toolchains: string[];
-  capabilities: Record<string, boolean>;
+  capabilities: string[];
   reason?: string;
 }
 
@@ -27,5 +27,5 @@ export interface CreateProjectInput {
 export interface CreatedProject {
   id: string;
   adapterId?: string;
-  capabilities?: Record<string, boolean>;
+  capabilities?: string[];
 }

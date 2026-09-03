@@ -69,7 +69,7 @@ class ContextRouter:
         source = context or {}
         facts = platform_facts or {
             key: source.get(key)
-            for key in ("mcu", "core", "flash_kb", "ram_kb", "framework", "compiler", "board", "led", "ioc", "project", "priority")
+            for key in ("adapterId", "platform", "mcu", "core", "flash_kb", "ram_kb", "framework", "compiler", "board", "led", "ioc", "project", "priority")
             if source.get(key) is not None
         }
         candidates: list[tuple[str, Any, bool]] = [

@@ -2,6 +2,8 @@
 
 > v0.9.0-beta architecture work is IN PROGRESS. This report remains the last release report and must not be read as v0.9 completion evidence.
 
+Current v0.9 gate evidence is maintained separately in `docs/V09_VERIFICATION.md`; it does not promote the released version.
+
 ## Version
 
 - App: 0.8.0-beta
@@ -107,7 +109,7 @@ Based on official STM32CubeF1 HAL. No stub HAL.
 
 ## Known Limitations
 
-- Only STM32F103 HAL. STM32F407 / ESP32 / 8051 are unsupported.
+- STM32F103 HAL is ready. The specifically registered ESP32-S3 ESP-IDF adapter is experimental; generic ESP32, STM32F407 and 8051 remain unsupported.
 - Code-mode approval is in-process (lost on restart). `once`/`always` now distinguished (`always` persists for the run).
 - Hardware loop max 3 flashes; PWM without a probe is PARTIAL.
 - Official template Makefile already lists most HAL `.c` files; `register_hal_module` still exists for stripped Makefiles and Error Memory.

@@ -16,12 +16,12 @@ The evaluation question is not “how many pages were added?”. It is:
 | Platform | Build | Agent | Flash | Hardware Validate |
 |---|---|---|---|---|
 | STM32F103 HAL | ✅ | Beta | Beta | Beta |
-| ESP32-S3 ESP-IDF 6.1 | Adapter in progress | ❌ | ❌ | ❌ |
+| ESP32-S3 ESP-IDF 6.1 | Experimental | Experimental | Requires detected device | Requires detected device |
 | STM32F407 | ❌ | ❌ | ❌ | ❌ |
 | ESP32 | ❌ | ❌ | ❌ | ❌ |
 | 8051 | ❌ | ❌ | ❌ | ❌ |
 
-Do not claim ESP32 / 8051 / F407 are available.
+Do not claim generic ESP32 / 8051 / F407 are available. Only the registered `esp32s3-idf` target is exposed, and remains experimental until its ESP-IDF 6.1 smoke gate runs successfully.
 
 ## Modes
 

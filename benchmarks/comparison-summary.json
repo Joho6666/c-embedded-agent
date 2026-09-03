@@ -9,11 +9,12 @@
   "skipped": [
     "LLM not configured"
   ],
-  "reason": "LLM not configured \u2014 benchmark not run",
+  "reason": "LLM not configured \u2014 not faking scores",
   "environment": {
     "temperature": 0,
     "output_budget": 2048,
-    "runs_per_task": 1
+    "runs_per_task": 1,
+    "python": "3.11.15"
   },
   "evidence": []
 }

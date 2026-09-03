@@ -1,0 +1,112 @@
+{
+  "id": "adc-dma",
+  "name": "ADC DMA",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "ADC1",
+    "DMA"
+  ],
+  "supportedTasks": [
+    "adc_dma"
+  ],
+  "pins": [
+    {
+      "pin": "PA0",
+      "signal": "ADC1_IN0"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_ADC1_CLK_ENABLE",
+    "__HAL_RCC_DMA1_CLK_ENABLE"
+  ],
+  "halModules": [
+    "ADC",
+    "DMA"
+  ],
+  "sourceFiles": [
+    "Core/Src/adc.c"
+  ],
+  "headers": [
+    "Core/Inc/adc.h"
+  ],
+  "irq": [
+    "DMA1_Channel1_IRQn"
+  ],
+  "dma": [
+    {
+      "instance": "DMA1_Channel1",
+      "dir": "ADC1"
+    }
+  ],
+  "initOrder": [
+    "MX_ADC1_Init",
+    "HAL_ADC_Start_DMA"
+  ],
+  "capabilities": [
+    "ADC",
+    "DMA"
+  ],
+  "knowledgeCollections": [
+    "HAL ADC DMA"
+  ],
+  "knowledge": [
+    "HAL ADC DMA"
+  ],
+  "goldenExamples": [
+    {
+      "id": "adc-dma",
+      "title": "ADC DMA",
+      "path": "examples/golden/stm32f103_adc_dma"
+    }
+  ],
+  "validators": [
+    {
+      "id": "dma",
+      "label": "DMA for ADC configured"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to HAL_ADC_Start_DMA",
+      "hint": "register ADC+DMA"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 ADC DMA implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "adc dma"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "PROJECT",
+  "golden_examples": [
+    {
+      "id": "adc-dma",
+      "title": "ADC DMA",
+      "path": "examples/golden/stm32f103_adc_dma"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to HAL_ADC_Start_DMA",
+      "hint": "register ADC+DMA"
+    }
+  ]
+}

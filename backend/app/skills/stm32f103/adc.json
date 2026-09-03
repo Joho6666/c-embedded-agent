@@ -1,0 +1,107 @@
+{
+  "id": "adc",
+  "name": "ADC",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "ADC1",
+    "ADC2"
+  ],
+  "supportedTasks": [
+    "adc_poll",
+    "adc_uart"
+  ],
+  "pins": [
+    {
+      "pin": "PA0",
+      "signal": "ADC1_IN0",
+      "mode": "GPIO_MODE_ANALOG"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_ADC1_CLK_ENABLE",
+    "__HAL_RCC_GPIOA_CLK_ENABLE"
+  ],
+  "halModules": [
+    "ADC"
+  ],
+  "sourceFiles": [
+    "Core/Src/adc.c"
+  ],
+  "headers": [
+    "Core/Inc/adc.h"
+  ],
+  "irq": [],
+  "dma": [],
+  "initOrder": [
+    "MX_ADC1_Init",
+    "HAL_ADC_Start"
+  ],
+  "capabilities": [
+    "Polling",
+    "Interrupt"
+  ],
+  "knowledgeCollections": [
+    "HAL ADC"
+  ],
+  "knowledge": [
+    "HAL ADC"
+  ],
+  "goldenExamples": [
+    {
+      "id": "adc-poll",
+      "title": "ADC poll",
+      "path": "examples/golden/stm32f103_adc"
+    }
+  ],
+  "validators": [
+    {
+      "id": "init",
+      "label": "HAL_ADC_Init present"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to HAL_ADC_Init",
+      "hint": "register_hal_module ADC"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 ADC implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "adc",
+    "采样"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "adc-poll",
+      "title": "ADC poll",
+      "path": "examples/golden/stm32f103_adc"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to HAL_ADC_Init",
+      "hint": "register_hal_module ADC"
+    }
+  ]
+}

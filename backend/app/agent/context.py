@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from app.mcu.stm32f103 import MCU
+from app.agent.context_router import ContextRouter
+from app.agent.task_classifier import TaskClassifier
 from app.tools.filesystem import list_files
 from app.tools.ioc import parse_ioc
 from app.tools.skills import match_skills, skill_summary
@@ -65,7 +67,8 @@ def build_context(
         except json.JSONDecodeError:
             project_cfg = {}
     led = led_from_ioc(ioc) if ioc else (project_cfg.get("led") or "PC13")
-    skills = [skill_summary(s) for s in match_skills(prompt)]
+    classification = TaskClassifier().classify(prompt, platform="stm32f103")
+    skills = [skill_summary(s) for s in match_skills(prompt, context_level=classification.context_level)]
     for s in extra_skills or []:
         sid = s.get("id")
         if sid and sid not in {x.get("id") for x in skills}:
@@ -76,7 +79,7 @@ def build_context(
     clock = (ioc or {}).get("clock") or {}
     pins = (ioc or {}).get("pins") or []
     pin_brief = [f"{p.get('pin')}={p.get('signal')}" for p in pins[:16]]
-    return {
+    legacy_context = {
         "mcu": mcu,
         "core": MCU["core"],
         "flash_kb": MCU["flash_kb"],
@@ -110,6 +113,18 @@ def build_context(
         else None,
         "priority": "IOC > Project Config > Board Profile > Default",
     }
+    routed = ContextRouter().route(legacy_context, level=classification.context_level)
+    compact = dict(routed.context.pop("platform_facts", {}))
+    compact.update(routed.context)
+    compact["_routing"] = {
+        "contextLevel": routed.level.value,
+        "budget": routed.budget,
+        "usedChars": routed.used_chars,
+        "includedSources": list(routed.included_sources),
+        "truncatedSources": list(routed.truncated_sources),
+        "reasons": list(routed.reasons),
+    }
+    return compact
 
 
 def context_prompt(ctx: dict[str, Any]) -> str:

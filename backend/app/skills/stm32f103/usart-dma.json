@@ -1,0 +1,120 @@
+{
+  "id": "usart-dma",
+  "name": "USART DMA",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "USART1",
+    "DMA"
+  ],
+  "supportedTasks": [
+    "usart_dma_rx"
+  ],
+  "pins": [
+    {
+      "pin": "PA9",
+      "signal": "USART1_TX"
+    },
+    {
+      "pin": "PA10",
+      "signal": "USART1_RX"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_USART1_CLK_ENABLE",
+    "__HAL_RCC_DMA1_CLK_ENABLE"
+  ],
+  "halModules": [
+    "UART",
+    "DMA"
+  ],
+  "sourceFiles": [
+    "Core/Src/usart.c"
+  ],
+  "headers": [
+    "Core/Inc/usart.h"
+  ],
+  "irq": [
+    "USART1_IRQn",
+    "DMA1_Channel5_IRQn"
+  ],
+  "dma": [
+    {
+      "instance": "DMA1_Channel5",
+      "dir": "RX"
+    }
+  ],
+  "initOrder": [
+    "MX_USART1_UART_Init",
+    "HAL_UART_Receive_DMA"
+  ],
+  "capabilities": [
+    "UART TX",
+    "UART RX",
+    "DMA"
+  ],
+  "knowledgeCollections": [
+    "HAL UART DMA"
+  ],
+  "knowledge": [
+    "HAL UART DMA"
+  ],
+  "goldenExamples": [
+    {
+      "id": "usart-dma",
+      "title": "USART DMA",
+      "path": "examples/golden/stm32f103_usart_dma"
+    }
+  ],
+  "validators": [
+    {
+      "id": "dma",
+      "label": "DMA clock + channel"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to HAL_UART_Receive_DMA",
+      "hint": "register UART+DMA"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 USART DMA implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "usart dma",
+    "uart dma",
+    "dma uart"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "PROJECT",
+  "golden_examples": [
+    {
+      "id": "usart-dma",
+      "title": "USART DMA",
+      "path": "examples/golden/stm32f103_usart_dma"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to HAL_UART_Receive_DMA",
+      "hint": "register UART+DMA"
+    }
+  ]
+}

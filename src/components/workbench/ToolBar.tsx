@@ -13,12 +13,13 @@ import { useWorkspaceUI } from "@/lib/stores/workspace-store";
 import { useLive } from "@/lib/stores/live-store";
 import { compileProject } from "@/lib/api/build";
 import { flashProject } from "@/lib/api/flash";
+import { getDevices, type DeviceItem } from "@/lib/api/devices";
 import { agentStatusLabel } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { getPlatform, normalizePlatformId } from "@/lib/platform";
 import { actionLabel, disabledReason } from "@/lib/platform/capabilities";
 import type { ToolbarActionId } from "@/types/platform";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export function ToolBar() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export function ToolBar() {
   const project = currentProject();
   const liveMode = useLive((s) => s.mode);
   const refreshLive = useLive((s) => s.refresh);
+  const [probe, setProbe] = useState<DeviceItem | null>(null);
 
   const platform = getPlatform(normalizePlatformId(hw.platform || project.platformId || project.platform));
 
@@ -42,6 +44,10 @@ export function ToolBar() {
     const t = window.setInterval(() => void refreshLive(), 15000);
     return () => window.clearInterval(t);
   }, [refreshLive]);
+
+  useEffect(() => {
+    void getDevices().then((d) => setProbe(d.probes.find((p) => p.id === "stlink") ?? d.probes[0] ?? null));
+  }, [liveMode]);
 
   const reason = (action: ToolbarActionId) => disabledReason(platform, action, liveMode);
 
@@ -139,8 +145,14 @@ export function ToolBar() {
         <Field label="分支" value={project.gitBranch || "main"} icon={<GitBranch className="size-3" />} />
         <Field
           label="设备"
-          value={hw.debugger || "Probe status unknown"}
-          tone={hw.debugger ? "success" : "muted"}
+          value={
+            probe?.presence === "connected"
+              ? probe.label
+              : probe?.presence === "available"
+                ? probe.label
+                : probe?.detail || "Probe status unknown"
+          }
+          tone={probe?.presence === "connected" ? "success" : "muted"}
         />
       </div>
 

@@ -29,6 +29,16 @@ const map = {
   experimental: { label: "Experimental", cls: "text-warning bg-warning/10" },
   planned: { label: "Planned", cls: "text-muted-foreground bg-muted" },
   not_detected: { label: "Not Detected", cls: "text-muted-foreground bg-muted" },
+  todo: { label: "Todo", cls: "text-muted-foreground bg-muted" },
+  in_progress: { label: "In Progress", cls: "text-info bg-info/10" },
+  agent_running: { label: "Agent Running", cls: "text-info bg-info/10" },
+  review: { label: "Review", cls: "text-warning bg-warning/10" },
+  blocked: { label: "Blocked", cls: "text-error bg-error/10" },
+  done: { label: "Done", cls: "text-success bg-success/10" },
+  active: { label: "Active", cls: "text-success bg-success/10" },
+  paused: { label: "Paused", cls: "text-warning bg-warning/10" },
+  completed: { label: "Completed", cls: "text-success bg-success/10" },
+  archived: { label: "Archived", cls: "text-muted-foreground bg-muted" },
 } as const;
 
 export function StatusBadge({

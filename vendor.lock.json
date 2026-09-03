@@ -1,0 +1,22 @@
+{
+  "STM32CubeF1": {
+    "package": "STM32CubeF1 HAL + CMSIS Device F1",
+    "halVersion": "1.1.9",
+    "halVersionMacros": {
+      "MAIN": "0x01",
+      "SUB1": "0x01",
+      "SUB2": "0x09"
+    },
+    "path": "templates/stm32f103_hal_official/Drivers",
+    "components": {
+      "HAL": "Drivers/STM32F1xx_HAL_Driver",
+      "CMSIS_Device_F1": "Drivers/CMSIS/Device/ST/STM32F1xx",
+      "CMSIS_Core": "Drivers/CMSIS/Include"
+    },
+    "source": "Vendored in-tree STM32CubeF1. Version from stm32f1xx_hal.c __STM32F1xx_HAL_VERSION_*."
+  },
+  "CMSIS_Device_F1": {
+    "path": "templates/stm32f103_hal_official/Drivers/CMSIS/Device/ST/STM32F1xx",
+    "device": "STM32F103xB"
+  }
+}

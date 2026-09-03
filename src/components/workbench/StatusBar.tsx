@@ -15,7 +15,7 @@ export function StatusBar() {
       <span>C</span>
       <span>{ctx.mcu || "MCU unknown"}</span>
       <span>{ctx.clock || "clock unknown"}</span>
-      <span>{ctx.serialPort || "serial unknown"} · {ctx.serialBaud || "—"}</span>
+      <span>{ctx.serialPort ? `${ctx.serialPort} · ${ctx.serialBaud || "—"}` : "serial unknown"}</span>
       <span className="ml-auto">C-Agent: {agentStatusLabel(status)}</span>
     </footer>
   );

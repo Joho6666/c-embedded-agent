@@ -51,6 +51,12 @@ next-env.d.ts
 
 # local workspace / sibling projects (do not publish)
 .zcode/
+.venv/
+.mimosa/
+backend/.mimosa/
+workspaces/
+*.sqlite
+ai-study-assistant/
 art-gallery/
 hallotickets/
 interactive-demos/
@@ -58,6 +64,8 @@ particle-heart/
 tongpin/
 tongpin-api/
 unibridge/
+unigateway/
+voyage/
 xiaojunceping/
 zuoyejing-stitch-rebuild/
 NUL

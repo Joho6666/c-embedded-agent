@@ -1,0 +1,1 @@
+{"id":"12","prompt":"SPI1 主机发送 0xA5。","expected_files":["Core/Src/main.c"],"must_compile":true}

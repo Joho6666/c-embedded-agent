@@ -18,16 +18,17 @@ export interface NavItem {
 }
 
 export const navItems: NavItem[] = [
-  { href: "/", label: "Home", icon: Home, mobile: true },
-  { href: "/projects", label: "项目", icon: FolderKanban, mobile: true },
+  { href: "/", label: "Today", icon: Home, mobile: true },
+  { href: "/projects", label: "Projects", icon: FolderKanban, mobile: true },
   { href: "/workspace", label: "Workspace", icon: LayoutPanelLeft, mobile: true },
   { href: "/agent", label: "Agent", icon: Bot },
-  { href: "/debug", label: "Debug", icon: Bug },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
-  { href: "/settings", label: "设置", icon: Settings },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export const moreNavItems: NavItem[] = [
+  { href: "/start", label: "Start Center", icon: MoreHorizontal },
+  { href: "/debug", label: "Debug", icon: Bug },
   { href: "/tools", label: "工具", icon: MoreHorizontal },
   { href: "/benchmark", label: "Benchmark", icon: MoreHorizontal },
   { href: "/history", label: "历史", icon: MoreHorizontal },

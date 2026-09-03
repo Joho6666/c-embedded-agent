@@ -1,0 +1,1 @@
+{"id":"13","prompt":"使用 HAL_GetTick 每 500ms 翻转 PC13。","expected_files":["Core/Src/main.c"],"must_compile":true}

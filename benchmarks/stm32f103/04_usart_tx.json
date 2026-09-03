@@ -1,0 +1,1 @@
+{"id":"04","prompt":"配置 USART1 115200，循环发送 Hello。","expected_files":["Core/Src/main.c"],"must_compile":true}

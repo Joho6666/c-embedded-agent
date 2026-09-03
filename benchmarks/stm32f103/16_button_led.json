@@ -1,0 +1,1 @@
+{"id":"16","prompt":"PA0 按键按下时点亮 PC13 LED。","expected_files":["Core/Src/main.c","Core/Src/gpio.c"],"must_compile":true}

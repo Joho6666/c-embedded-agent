@@ -1,0 +1,6 @@
+{
+  "skipped": [
+    "LLM not configured"
+  ],
+  "reason": "LLM not configured \u2014 not faking Agent vs Baseline"
+}

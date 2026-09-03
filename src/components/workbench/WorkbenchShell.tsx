@@ -22,7 +22,11 @@ export function WorkbenchShell({
 }) {
   const bottomOpen = useWorkspaceUI((s) => s.bottomOpen);
   const ide = isIdeRoute(pathname);
-  const hideBottom = pathname === "/" || pathname.startsWith("/projects") || pathname.startsWith("/settings");
+  const hideBottom =
+    pathname === "/" ||
+    pathname === "/start" ||
+    pathname.startsWith("/projects") ||
+    pathname.startsWith("/settings");
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">

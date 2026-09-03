@@ -1,0 +1,15 @@
+{
+  "gcc": true,
+  "llm": false,
+  "model": "",
+  "tasks": [],
+  "first_build_success": 0,
+  "auto_fix_success": 0,
+  "compile_success": 0,
+  "semantic_success": 0,
+  "avg_iterations": 0.0,
+  "skipped": [
+    "LLM not configured"
+  ],
+  "template_build": true
+}

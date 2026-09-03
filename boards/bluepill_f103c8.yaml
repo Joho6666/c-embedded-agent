@@ -1,0 +1,9 @@
+board: Blue Pill
+mcu: STM32F103C8T6
+led: PC13
+oscillator: 8MHz HSE
+debug: SWD
+button: none
+uart: USART1
+uart_tx: PA9
+uart_rx: PA10

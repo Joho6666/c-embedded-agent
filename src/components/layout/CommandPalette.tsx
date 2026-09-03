@@ -9,6 +9,8 @@ import { useAgent } from "@/lib/stores/agent-store";
 import { useEditor } from "@/lib/stores/editor-store";
 import { mcuCatalog } from "@/lib/mock/hardware";
 import { useHardware } from "@/lib/stores/hardware-store";
+import { createProject, createTask, loadProjects } from "@/lib/os/service";
+import { useOsStore } from "@/lib/stores/os-store";
 
 export function CommandPalette() {
   const open = useWorkspaceUI((s) => s.commandOpen);
@@ -50,6 +52,47 @@ export function CommandPalette() {
         />
         <Command.List className="max-h-72 overflow-auto p-1">
           <Command.Empty className="px-3 py-6 text-center text-[12px] text-muted-foreground">无匹配</Command.Empty>
+          <Command.Group heading="MyOS" className="px-1 py-1 text-[10px] text-muted-foreground">
+            {[
+              { id: "today", label: "Open Today", run: () => go("/") },
+              { id: "create-project", label: "Create project", run: () => { void createProject({ name: "Untitled project" }).then((p) => go(`/projects/${p.id}`)); } },
+              {
+                id: "create-task",
+                label: "Create task",
+                run: () => {
+                  void (async () => {
+                    const projects = await loadProjects();
+                    const p = projects[0] ?? (await createProject({ name: "Untitled project" }));
+                    const task = await createTask(p.id, { title: "New task" });
+                    go(`/projects/${p.id}?tab=tasks&task=${task.id}`);
+                  })();
+                },
+              },
+              { id: "open-cagent", label: "Open C-Agent", run: () => go("/agent") },
+              { id: "search-myos", label: "Search MyOS", run: () => go("/projects") },
+              { id: "summarize", label: "Summarize project", run: () => go("/projects") },
+              { id: "run-review", label: "Run project review", run: () => go("/") },
+            ].map((a) => (
+              <Command.Item
+                key={a.id}
+                value={`${a.label} create project create task open c-agent ask codex search myos find file create automation summarize`}
+                onSelect={a.run}
+                className="flex cursor-pointer rounded-sm px-2 py-1.5 text-[12px] text-foreground data-[selected=true]:bg-accent"
+              >
+                {a.label}
+              </Command.Item>
+            ))}
+            {useOsStore.getState().projects.concat().slice(0, 8).map((p) => (
+              <Command.Item
+                key={p.id}
+                value={`project ${p.name}`}
+                onSelect={() => go(`/projects/${p.id}`)}
+                className="flex cursor-pointer rounded-sm px-2 py-1.5 text-[12px] data-[selected=true]:bg-accent"
+              >
+                Open {p.name}
+              </Command.Item>
+            ))}
+          </Command.Group>
           <Command.Group heading="操作" className="px-1 py-1 text-[10px] text-muted-foreground">
             {[
               { id: "demo", label: "运行 STM32 LED 演示", run: () => { void startGoldenPath(); go("/workspace"); } },
@@ -86,6 +129,8 @@ export function CommandPalette() {
               { href: "/debug", label: "调试" },
               { href: "/mcu/pins", label: "引脚图" },
               { href: "/projects/new", label: "导入 CubeMX" },
+              { href: "/start", label: "Start Center" },
+              { href: "/", label: "Today" },
             ].map((n) => (
               <Command.Item
                 key={n.href}

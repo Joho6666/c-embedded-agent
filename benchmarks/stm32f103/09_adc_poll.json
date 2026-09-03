@@ -1,0 +1,1 @@
+{"id":"09","prompt":"ADC1 轮询读取 PA0。","expected_files":["Core/Src/main.c"],"must_compile":true}

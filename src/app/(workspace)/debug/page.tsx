@@ -75,7 +75,7 @@ export default function DebugCenterPage() {
     <div className="h-full overflow-auto p-4">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h1 className="text-[18px] font-semibold">Debug & Hardware Validation</h1>
+          <h1 className="text-[18px] font-semibold">调试与硬件验证</h1>
           <p className="text-[12px] text-muted-foreground">无证据不写 PASS。GDB 寄存器当前 Not Available。</p>
         </div>
         <HardwareRunButton />
@@ -83,7 +83,7 @@ export default function DebugCenterPage() {
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(260px,0.7fr)]">
         <section className="rounded-md border border-border bg-panel p-3">
-          <h2 className="text-[12px] font-medium">Debug Session</h2>
+          <h2 className="text-[12px] font-medium">调试会话</h2>
           <dl className="mt-2 space-y-1 text-[12px]">
             <div className="flex justify-between"><dt className="text-muted-foreground">状态</dt><dd>Not Connected</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">MCU</dt><dd className="font-mono">{ctx.mcu}</dd></div>
@@ -115,7 +115,7 @@ export default function DebugCenterPage() {
         </section>
 
         <section className="rounded-md border border-border bg-panel p-3">
-          <h2 className="text-[12px] font-medium">Hardware Validation Timeline</h2>
+          <h2 className="text-[12px] font-medium">硬件验证时间线</h2>
           <div className="mt-2">
             <ValidationTimeline result={run} />
           </div>
@@ -125,7 +125,7 @@ export default function DebugCenterPage() {
 
         <section className="space-y-3">
           <div className="rounded-md border border-border bg-panel p-3">
-            <h2 className="text-[12px] font-medium">Hardware Result</h2>
+            <h2 className="text-[12px] font-medium">硬件结果</h2>
             <ul className="mt-2 space-y-1 text-[12px]">
               {RESULT_ROWS.map((r) => (
                 <li key={r.id} className="flex items-center justify-between">
@@ -136,7 +136,7 @@ export default function DebugCenterPage() {
             </ul>
           </div>
           <div className="rounded-md border border-border bg-panel p-3">
-            <h2 className="text-[12px] font-medium">Auto Diagnosis</h2>
+            <h2 className="text-[12px] font-medium">自动诊断</h2>
             {diagnosis.length === 0 ? (
               <p className="mt-2 text-[12px] text-muted-foreground">尚无硬件证据，不会猜测成功。</p>
             ) : (
@@ -166,11 +166,11 @@ export default function DebugCenterPage() {
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <section className="h-72 overflow-hidden rounded-md border border-border">
-          <div className="border-b border-border px-3 py-1.5 text-[12px] font-medium">Serial Monitor</div>
+          <div className="border-b border-border px-3 py-1.5 text-[12px] font-medium">串口监视器</div>
           <SerialMonitor />
         </section>
         <section className="h-72 overflow-auto rounded-md border border-border bg-panel p-3">
-          <h2 className="text-[12px] font-medium">Flash Log</h2>
+          <h2 className="text-[12px] font-medium">烧录日志</h2>
           <pre className="mt-2 whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
             {terminalLines.slice(-30).join("\n") || (mode === "live" ? "尚无 flash 日志" : "DEMO / 离线无真实 Flash Log")}
           </pre>

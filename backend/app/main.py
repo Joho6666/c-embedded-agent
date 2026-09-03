@@ -32,8 +32,10 @@ from app.tools.project_scan import import_existing_project, scan_existing_projec
 from app.validation import validate_project
 from app.workspace.manager import create_project, list_projects, project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
+from app.os_api import router as os_router
 
 app = FastAPI(title="C-Embedded Agent API")
+app.include_router(os_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],

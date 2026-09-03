@@ -1,0 +1,1 @@
+{"id":"01","prompt":"Blue Pill 板载 LED 每 500ms 闪烁。","expected_files":["Core/Src/main.c","Core/Src/gpio.c"],"must_compile":true}

@@ -1,6 +1,8 @@
-# C-Agent Workbench 2.0
+# C-Agent Workbench 2.0 / MyOS layer
 
-AI firmware engineering workbench for C / MCU. Current **real** backend remains STM32F103 HAL: requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
+AI firmware engineering workbench for C / MCU, with a Work OS overlay (Today · Projects · Tasks · Assign Agent). Current **real** backend remains STM32F103 HAL: requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
+
+MyOS P0 sits on top of this workbench. It does **not** replace firmware execution. C-Agent is the only runnable agent; Codex / Claude Code / Grok are registered as Planned.
 
 UI shell is Workbench 2.0 (Start Center · Multi-MCU Setup · Agent Workspace · Debug & Validation). ESP32 / C51 / RP2040 / Host C are **Planned / UI Preview**, not Supported.
 
@@ -42,9 +44,11 @@ python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 
 Open http://localhost:3000
 
-Workbench pages:
+Workbench / MyOS pages:
 
-- `/` Start Center
+- `/` Today (human + agent work)
+- `/start` Start Center (firmware intake)
+- `/projects` `/projects/[id]` Work OS project (Overview / Tasks / Docs / Files / Agents / Activity)
 - `/projects/new` Multi-MCU Setup
 - `/workspace` Agent Workspace
 - `/debug` Debug & Hardware Validation

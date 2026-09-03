@@ -1,6 +1,7 @@
 import { apiFetch } from "./client";
 import type { Project } from "@/types/project";
 import { useLive } from "@/lib/stores/live-store";
+import type { CreateProjectInput, CreatedProject } from "@/types/platform";
 
 interface BackendProject {
   id: string;
@@ -40,4 +41,8 @@ export async function listProjects(): Promise<Project[]> {
   } catch {
     return [];
   }
+}
+
+export function createProject(input: CreateProjectInput): Promise<CreatedProject> {
+  return apiFetch<CreatedProject>("/api/projects", { method: "POST", body: JSON.stringify(input) });
 }

@@ -1,0 +1,1 @@
+{"id":"31","prompt":"SPI1 Mode 3 读取寄存器 0x0F。","platform":"stm32f103-hal","category":"spi","fixture":"stm32f103_hal_official","oracle":{"must_compile":true,"expected_files":["Core/Src/main.c"]},"requirements":{"toolchain":"arm-none-eabi-gcc-13.3.1","hardware":false},"environment":{"framework":"HAL","sdk":"STM32CubeF1-1.1.9"},"evidence":["build","static-validation"]}

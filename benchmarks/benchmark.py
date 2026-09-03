@@ -11,6 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TASK_DIR = Path(__file__).resolve().parent / "stm32f103"
+RUNS_PER_TASK = int(os.environ.get("BENCH_RUNS", "1"))
+OUTPUT_BUDGET = int(os.environ.get("BENCH_OUTPUT_TOKENS", "2048"))
 sys.path.insert(0, str(ROOT / "backend"))
 os.chdir(ROOT)
 
@@ -31,7 +33,12 @@ def load_tasks() -> list[dict]:
     for p in sorted(TASK_DIR.glob("*.json")):
         if p.name in {"results.json", "latest-summary.json"}:
             continue
-        tasks.append(json.loads(p.read_text(encoding="utf-8")))
+        task = json.loads(p.read_text(encoding="utf-8"))
+        required = {"id", "prompt", "platform", "category", "fixture", "oracle", "requirements", "environment", "evidence"}
+        missing = required - task.keys()
+        if missing:
+            raise ValueError(f"{p.name}: missing benchmark fields {sorted(missing)}")
+        tasks.append(task)
     return tasks
 
 
@@ -86,6 +93,7 @@ def baseline_write(project_root: Path, prompt: str) -> dict:
 
 def empty_summary(*, gcc: bool, llm: bool, skipped: list[str], model: str) -> dict:
     return {
+        "status": "SKIPPED",
         "model": model,
         "tasks": 0,
         "firstBuildSuccess": 0.0,
@@ -99,6 +107,8 @@ def empty_summary(*, gcc: bool, llm: bool, skipped: list[str], model: str) -> di
         "gcc": gcc,
         "llm": llm,
         "skipped": skipped,
+        "environment": {"temperature": 0, "outputBudget": OUTPUT_BUDGET, "runsPerTask": RUNS_PER_TASK},
+        "evidence": [],
     }
 
 
@@ -115,6 +125,8 @@ def main() -> int:
         tasks = tasks[: int(limit_raw)]
     model = os.environ.get("LLM_MODEL") or settings.llm_model or ""
     out = {
+        "schema_version": 2,
+        "status": "NOT RUN",
         "gcc": gcc_ok(),
         "llm": llm_ok(),
         "model": model,
@@ -125,6 +137,13 @@ def main() -> int:
         "semantic_success": 0,
         "avg_iterations": 0.0,
         "skipped": [],
+        "environment": {
+            "temperature": 0,
+            "output_budget": OUTPUT_BUDGET,
+            "runs_per_task": RUNS_PER_TASK,
+            "python": sys.version.split()[0],
+        },
+        "evidence": [],
     }
     summary_path = TASK_DIR / "latest-summary.json"
     comparison_path = ROOT / "benchmarks" / "comparison-summary.json"
@@ -132,9 +151,10 @@ def main() -> int:
     if not gcc_ok():
         skipped = ["arm-none-eabi-gcc or make missing"]
         out["skipped"] = skipped
+        out["status"] = "SKIPPED"
         write_json(TASK_DIR / "results.json", out)
         write_json(summary_path, empty_summary(gcc=False, llm=llm_ok(), skipped=skipped, model=model))
-        write_json(comparison_path, {"skipped": skipped, "reason": "toolchain missing — not faking scores"})
+        write_json(comparison_path, {"status": "SKIPPED", "tasks": 0, "skipped": skipped, "reason": "toolchain missing — not faking scores", "environment": out["environment"], "evidence": []})
         print(json.dumps(out, indent=2))
         print("SKIP: ARM GCC not installed — not faking success")
         return 0
@@ -145,10 +165,11 @@ def main() -> int:
         meta = create_project("bench-template")
         result = run_build(project_root(meta["id"]))
         out["skipped"] = skipped
+        out["status"] = "SKIPPED"
         out["template_build"] = bool(result.get("success"))
         write_json(TASK_DIR / "results.json", out)
         write_json(summary_path, empty_summary(gcc=True, llm=False, skipped=skipped, model=model))
-        write_json(comparison_path, {"skipped": skipped, "reason": "LLM not configured — not faking Agent vs Baseline"})
+        write_json(comparison_path, {"status": "SKIPPED", "tasks": 0, "skipped": skipped, "reason": "LLM not configured — not faking Agent vs Baseline", "environment": out["environment"], "evidence": [{"kind": "template-build", "passed": bool(result.get("success"))}]})
         print(json.dumps(out, indent=2))
         print("SKIP: LLM not configured — template compile recorded only")
         return 0
@@ -212,6 +233,13 @@ def main() -> int:
             "baseline_success": b_ok,
             "baseline_semantic": b_sem,
             "baseline_seconds": round(b_sec, 2),
+            "platform": task["platform"],
+            "category": task["category"],
+            "fixture": task["fixture"],
+            "oracle": task["oracle"],
+            "requirements": task["requirements"],
+            "environment": task["environment"],
+            "evidence": task["evidence"],
         }
         out["tasks"].append(item)
         iterations.append(run.iteration)
@@ -235,10 +263,12 @@ def main() -> int:
     out["compile_success_rate"] = out["compile_success"] / n
     out["auto_fix_success_rate"] = out["auto_fix_success"] / n
     out["semantic_success_rate"] = out["semantic_success"] / n
+    out["status"] = "PASS"
     out["avg_iterations"] = sum(iterations) / max(len(iterations), 1)
     write_json(TASK_DIR / "results.json", out)
 
     summary = {
+        "status": "PASS",
         "model": model,
         "tasks": len(tasks),
         "firstBuildSuccess": out["first_build_success"] / n,
@@ -252,10 +282,13 @@ def main() -> int:
         "gcc": True,
         "llm": True,
         "skipped": [],
+        "environment": out["environment"],
+        "evidence": [{"kind": "raw-results", "path": "benchmarks/stm32f103/results.json"}],
     }
     write_json(summary_path, summary)
 
     comparison = {
+        "status": "PASS",
         "tasks": len(tasks),
         "model": model,
         "baselineCompileSuccess": baseline_compile / n,
@@ -269,6 +302,8 @@ def main() -> int:
         "improvementCompile": (agent_compile - baseline_compile) / n,
         "improvementValidation": (agent_valid - baseline_valid) / n,
         "skipped": [],
+        "environment": out["environment"],
+        "evidence": [{"kind": "raw-results", "path": "benchmarks/stm32f103/results.json"}],
     }
     write_json(comparison_path, comparison)
     print(json.dumps({k: out[k] for k in out if k != "tasks"}, indent=2))

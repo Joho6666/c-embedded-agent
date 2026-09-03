@@ -1,5 +1,7 @@
 # RELEASE_REPORT — C-Embedded Agent 0.8.0-beta
 
+> v0.9.0-beta architecture work is IN PROGRESS. This report remains the last release report and must not be read as v0.9 completion evidence.
+
 ## Version
 
 - App: 0.8.0-beta
@@ -100,7 +102,7 @@ Based on official STM32CubeF1 HAL. No stub HAL.
 
 - Agent vs Baseline cannot run without a public LLM endpoint.
 - Windows CI/dev hosts may skip symlink escape test.
-- GitHub Actions runners still lack ARM GCC; golden compile tests skip there (local they pass).
+- The upgraded CI definition installs and requires ARM GCC 13.3.1 for the Golden gate; its first remote run is NOT RUN in this checkout.
 - `unigateway/` leftover directory is gitignored; not part of the Agent runtime.
 
 ## Known Limitations
@@ -109,7 +111,7 @@ Based on official STM32CubeF1 HAL. No stub HAL.
 - Code-mode approval is in-process (lost on restart). `once`/`always` now distinguished (`always` persists for the run).
 - Hardware loop max 3 flashes; PWM without a probe is PARTIAL.
 - Official template Makefile already lists most HAL `.c` files; `register_hal_module` still exists for stripped Makefiles and Error Memory.
-- Benchmark task count is 20, not 30.
+- Benchmark task definitions have expanded to 50; LLM evaluation remains SKIPPED until a fair same-model run is executed.
 
 ## Supported Features
 

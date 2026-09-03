@@ -2,6 +2,7 @@ name: ci
 on:
   push:
   pull_request:
+
 jobs:
   frontend:
     runs-on: ubuntu-latest
@@ -13,6 +14,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
   backend:
     runs-on: ubuntu-latest
     steps:
@@ -23,3 +25,59 @@ jobs:
       - run: pip install -r backend/requirements.txt
       - run: python -m pytest -q
         working-directory: backend
+
+  stm32-golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ARM GCC 13.3.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output /tmp/arm-gcc.tar.gz \
+            https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.3.1-1.1/xpack-arm-none-eabi-gcc-13.3.1-1.1-linux-x64.tar.gz
+          mkdir -p "$RUNNER_TEMP/arm-gcc"
+          tar -xzf /tmp/arm-gcc.tar.gz -C "$RUNNER_TEMP/arm-gcc" --strip-components=1
+          echo "$RUNNER_TEMP/arm-gcc/bin" >> "$GITHUB_PATH"
+      - name: Report toolchain
+        run: |
+          arm-none-eabi-gcc --version
+          make --version
+      - name: Build and verify 11 Golden projects
+        run: python scripts/golden_build.py
+
+  esp32-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: template
+        name: Detect ESP32-S3 template
+        shell: bash
+        run: |
+          if [[ -f templates/esp32s3_idf/CMakeLists.txt ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "SKIPPED: ESP32-S3 adapter/template has not entered the tree"
+          fi
+      - name: ESP-IDF 6.1 build smoke
+        if: steps.template.outputs.available == 'true'
+        run: >-
+          docker run --rm
+          -v "$PWD:/project"
+          espressif/idf:v6.1
+          bash -lc "cd /project/templates/esp32s3_idf && idf.py set-target esp32s3 && idf.py build"
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Secret scan
+        run: python scripts/secret_scan.py
+      - name: Documentation and benchmark schema
+        run: python scripts/quality_gate.py

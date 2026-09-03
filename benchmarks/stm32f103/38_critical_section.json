@@ -1,0 +1,1 @@
+{"id":"38","prompt":"在主循环与中断共享计数器并正确保护临界区。","platform":"stm32f103-hal","category":"nvic","fixture":"stm32f103_hal_official","oracle":{"must_compile":true,"expected_files":["Core/Src/main.c"]},"requirements":{"toolchain":"arm-none-eabi-gcc-13.3.1","hardware":false},"environment":{"framework":"HAL","sdk":"STM32CubeF1-1.1.9"},"evidence":["build","static-validation"]}

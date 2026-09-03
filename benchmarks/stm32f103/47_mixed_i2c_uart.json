@@ -1,0 +1,1 @@
+{"id":"47","prompt":"扫描 I2C1 并通过 USART1 打印发现的地址。","platform":"stm32f103-hal","category":"mixed","fixture":"stm32f103_hal_official","oracle":{"must_compile":true,"expected_files":["Core/Src/main.c"]},"requirements":{"toolchain":"arm-none-eabi-gcc-13.3.1","hardware":false},"environment":{"framework":"HAL","sdk":"STM32CubeF1-1.1.9"},"evidence":["build","static-validation"]}

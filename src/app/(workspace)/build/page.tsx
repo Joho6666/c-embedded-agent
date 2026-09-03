@@ -8,6 +8,7 @@ import { useTerminal } from "@/lib/stores/terminal-store";
 import { useLive } from "@/lib/stores/live-store";
 import { useProject } from "@/lib/stores/project-store";
 import { API_BASE } from "@/lib/api/client";
+import { flashProject } from "@/lib/api/build";
 import { Button } from "@/components/ui/button";
 
 export default function BuildPage() {
@@ -35,9 +36,9 @@ export default function BuildPage() {
             size="sm"
             variant="outline"
             onClick={async () => {
-              const r = await fetch(`${API_BASE}/api/projects/${projectId}/flash`, { method: "POST" });
-              const body = await r.text();
-              setFlashHint(r.ok ? "Flash 已提交" : `Flash 失败：${body.slice(0, 180)}`);
+              setFlashHint("Flash 执行中…");
+              const result = await flashProject(projectId);
+              setFlashHint(result.success ? "Flash 成功" : `Flash 失败：${result.error ?? result.output ?? result.status ?? "无设备成功证据"}`.slice(0, 180));
             }}
           >
             Flash (OpenOCD ST-Link)

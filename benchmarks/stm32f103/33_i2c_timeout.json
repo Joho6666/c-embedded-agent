@@ -1,0 +1,1 @@
+{"id":"33","prompt":"I2C1 读取地址 0x68，包含超时和错误处理。","platform":"stm32f103-hal","category":"i2c","fixture":"stm32f103_hal_official","oracle":{"must_compile":true,"expected_files":["Core/Src/main.c"]},"requirements":{"toolchain":"arm-none-eabi-gcc-13.3.1","hardware":false},"environment":{"framework":"HAL","sdk":"STM32CubeF1-1.1.9"},"evidence":["build","static-validation"]}

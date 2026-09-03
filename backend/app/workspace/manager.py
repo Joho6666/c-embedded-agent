@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -8,6 +9,9 @@ from typing import Any
 
 from app.config.settings import settings
 from app.tools.gitutil import init_repo
+
+
+PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _ws_root() -> Path:
@@ -50,7 +54,12 @@ def init_repo_safe(dest: Path) -> None:
 
 
 def project_root(project_id: str) -> Path:
-    dest = _ws_root() / project_id
+    if not PROJECT_ID_RE.fullmatch(project_id or ""):
+        raise FileNotFoundError(project_id)
+    workspace = _ws_root()
+    dest = (workspace / project_id).resolve()
+    if dest.parent != workspace:
+        raise FileNotFoundError(project_id)
     if not dest.is_dir():
         raise FileNotFoundError(project_id)
     return dest

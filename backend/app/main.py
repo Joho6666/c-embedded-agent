@@ -189,13 +189,16 @@ def analyze_ioc(body: IocBody) -> dict[str, Any]:
 
 @app.post("/api/projects/import-ioc")
 def import_ioc(body: IocBody) -> dict[str, Any]:
-    analysis = parse_ioc(body.content, body.filename)
-    name = body.name or Path(body.filename).stem or "CubeMX"
+    filename = Path(body.filename.replace("\\", "/")).name
+    if not filename.lower().endswith(".ioc"):
+        raise HTTPException(400, "filename must be a .ioc basename")
+    analysis = parse_ioc(body.content, filename)
+    name = body.name or Path(filename).stem or "CubeMX"
     meta = create_project(name, analysis.get("mcu") or "STM32F103C8T6", "HAL")
     root = project_root(meta["id"])
-    (root / body.filename).write_text(body.content, encoding="utf-8")
+    (root / filename).write_text(body.content, encoding="utf-8")
     (root / "ioc-analysis.json").write_text(json.dumps(analysis, indent=2), encoding="utf-8")
-    meta["ioc"] = body.filename
+    meta["ioc"] = filename
     meta["board"] = analysis.get("board") or meta.get("board")
     (root / "project.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return {"available": True, "projectId": meta["id"], "analysis": analysis}
@@ -369,7 +372,7 @@ def file_get(project_id: str, path: str) -> dict[str, str]:
 @app.put("/api/projects/{project_id}/file")
 def file_put(project_id: str, body: WriteFileBody) -> dict[str, str]:
     try:
-        write_file(project_root(project_id), body.path, body.content, advanced=True)
+        write_file(project_root(project_id), body.path, body.content, advanced=False)
         return {"ok": "1", "path": body.path}
     except (FileNotFoundError, PathEscapeError, ProtectedPathError) as e:
         raise HTTPException(400, str(e)) from None

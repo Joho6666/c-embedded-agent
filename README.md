@@ -1,12 +1,18 @@
-# C-Agent Workbench 2.0 / MyOS layer
+# C-Embedded Agent
 
-AI firmware engineering workbench for C / MCU, with a Work OS overlay (Today · Projects · Tasks · Assign Agent). Current **real** backend remains STM32F103 HAL: requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
+**Embedded Engineering Runtime for AI Coding Agents.**
 
-MyOS P0 sits on top of this workbench. It does **not** replace firmware execution. C-Agent is the only runnable agent; Codex / Claude Code / Grok are registered as Planned.
+Give Codex, Claude Code, Cursor and other AI coding agents real embedded engineering capabilities.
 
-UI shell is Workbench 2.0 (Start Center · Multi-MCU Setup · Agent Workspace · Debug & Validation). ESP32 / C51 / RP2040 / Host C are **Planned / UI Preview**, not Supported.
+```
+Project → Inspect → Understand MCU / IOC / Board → Modify → Build → Diagnose → Flash → Serial → Hardware Validate
+```
 
-Version: **0.8.0-beta** (Late Beta). Not a Production Candidate: Agent vs Baseline was not executed (no LLM configured on this machine).
+Harnesses plan and edit code. CEA Core talks to ARM GCC, OpenOCD, serial, IOC, and boards. The Web UI remains the official workbench / demo — it is no longer where the engineering logic lives.
+
+Version: **0.9.0-alpha-mcp**. Production execution matrix is still **STM32F103 HAL only**. ESP32 / C51 / RP2040 / Host C are not supported.
+
+MyOS P0 (Today · Projects · Tasks · Assign Agent) sits on Workbench 2.0. It does **not** replace firmware execution. In the Web OS, C-Agent is the only runnable agent; Codex / Claude Code / Grok remain Planned inside MyOS. MCP is the path for those harnesses to call CEA Core.
 
 The evaluation question is not “how many pages were added?”. It is:
 
@@ -43,6 +49,22 @@ python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
 Open http://localhost:3000
+
+MCP (stdio, for Claude Code / Cursor):
+
+```bash
+python scripts/cea_mcp.py
+```
+
+CLI:
+
+```bash
+cd backend
+python -m app.cli inspect ../examples/golden/stm32f103_led
+python -m app.cli build ../examples/golden/stm32f103_usart
+```
+
+Architecture: `docs/ARCHITECTURE.md`. MCP: `docs/MCP.md`. Skills: `docs/SKILLS.md`. Harness: `docs/HARNESS_INTEGRATION.md`.
 
 Workbench / MyOS pages:
 
@@ -145,8 +167,8 @@ npm run build
 
 GitHub Actions: frontend `npm ci && npm run build`, backend `pytest`. ARM GCC is optional (golden `make` tests skip).
 
-Leftover Universal AI Gateway tests (`tests/test_gateway.py`, `tests/test_v090.py`) are **ignored** by pytest. They target `/v1` / `/admin` which this app does not mount. That is not deleting Agent tests.
+Leftover Universal AI Gateway Python sources live in `legacy/universal-ai-gateway/`. They are not imported by the live app.
 
 `unigateway/` is an independent mock console from an older graft. It is not imported by the Embedded Agent. Do not treat it as part of this product.
 
-This release is STM32F103 only.
+This release is STM32F103 only. Do not advertise ESP32 / C51 support.

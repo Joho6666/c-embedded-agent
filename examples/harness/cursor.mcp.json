@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "c-embedded-agent": {
+      "command": "python",
+      "args": ["scripts/cea_mcp.py"]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-09-04T11:29:14.270937+00:00",
+  "gcc": true,
+  "llm": false,
+  "plain_harness": "SKIPPED",
+  "cea_mcp": [
+    {
+      "id": "mcp-01-inspect-led",
+      "mode": "cea_mcp",
+      "status": "PASS",
+      "skip_reason": null,
+      "compile": "SKIPPED",
+      "hardware": "SKIPPED",
+      "artifacts": [],
+      "notes": "plain_harness comparison SKIPPED \u2014 no LLM harness configured; not faking Agent vs Baseline",
+      "inspected": "SUCCESS"
+    },
+    {
+      "id": "mcp-02-build-usart",
+      "mode": "cea_mcp",
+      "status": "PASS",
+      "skip_reason": null,
+      "compile": "SUCCESS",
+      "hardware": "SKIPPED",
+      "artifacts": [],
+      "notes": "plain_harness comparison SKIPPED \u2014 no LLM harness configured; not faking Agent vs Baseline",
+      "inspected": "SUCCESS"
+    }
+  ],
+  "reason": "LLM / Harness not configured \u2014 not faking comparison numbers"
+}

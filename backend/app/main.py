@@ -14,21 +14,26 @@ from pydantic import BaseModel, Field
 from app.agent.runtime import RUNS, AgentRun, event_stream, request_stop, resolve_approval, run_agent
 from app.config.settings import settings
 from app.db import list_runs, load_run
-from app.tools.compiler import CompileError, compile_project
+from app.core import (
+    build_project,
+    flash_firmware,
+    inspect_project,
+    list_serial_ports,
+    validate_hardware,
+)
 from app.tools.detect import connected_devices, environment_status, gcc_installed, tool_status
-from app.tools.error_memory import get_error, list_errors, record_from_output
+from app.tools.error_memory import get_error, list_errors
 from app.tools.filesystem import list_files, read_file, write_file
-from app.tools.flash import FlashError, flash_elf
 from app.tools.gitutil import restore_snapshot
-from app.tools.hardware_run import auto_debug, run_pipeline
+from app.tools.hardware_run import auto_debug
 from app.tools.ioc import parse_ioc
 from app.tools.knowledge import ingest_pdf, retrieve_knowledge
 from app.tools.serialutil import connect as serial_connect
 from app.tools.serialutil import disconnect as serial_disconnect
-from app.tools.serialutil import list_ports, read_available, status as serial_status
+from app.tools.serialutil import read_available, status as serial_status
 from app.tools.skills import benchmark_wrap, get_skill, list_skills
 from app.tools.hw_session import load_session, save_session
-from app.tools.project_scan import import_existing_project, scan_existing_project
+from app.tools.project_scan import import_existing_project
 from app.validation import validate_project
 from app.workspace.manager import create_project, list_projects, project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
@@ -127,7 +132,7 @@ def _version_payload() -> dict[str, Any]:
             cube = None
     return {
         "appVersion": app_ver,
-        "agentRuntimeVersion": "0.8.0-beta",
+        "agentRuntimeVersion": app_ver,
         "templateVersion": "stm32f103_hal_official",
         "stm32cubef1Version": (cube or {}).get("STM32CubeF1") or (cube or {}).get("hal") or "STM32CubeF1 in-tree",
         "vendor": cube,
@@ -224,7 +229,14 @@ def hardware_run(body: HardwareRunBody) -> dict[str, Any]:
         root = project_root(body.projectId)
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    return run_pipeline(root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect, task=body.task)
+    result = validate_hardware(
+        root,
+        serial_device=body.serialDevice,
+        baud=body.baud,
+        expect=body.expect,
+        task=body.task,
+    )
+    return result.get("pipeline") or result
 
 
 @app.post("/api/hardware/auto-debug")
@@ -249,7 +261,8 @@ def validation_get(projectId: str = "", prompt: str = "") -> dict[str, Any]:
 
 @app.post("/api/projects/scan-existing")
 def scan_existing(body: ImportExistingBody) -> dict[str, Any]:
-    return scan_existing_project(Path(body.path))
+    result = inspect_project(body.path)
+    return result.get("scan") or result
 
 
 @app.post("/api/projects/import-existing")
@@ -316,7 +329,8 @@ def devices() -> dict[str, Any]:
 
 @app.get("/api/serial/ports")
 def serial_ports() -> list[dict[str, Any]]:
-    return list_ports()
+    result = list_serial_ports()
+    return result.get("ports") or []
 
 
 @app.get("/api/serial/status")
@@ -380,14 +394,22 @@ def file_put(project_id: str, body: WriteFileBody) -> dict[str, str]:
 @app.post("/api/projects/{project_id}/build")
 def build(project_id: str) -> dict[str, Any]:
     try:
-        result = compile_project(project_root(project_id))
-        record_from_output(str(result.get("combined") or ""), success=bool(result.get("success")))
-        return result
+        root = project_root(project_id)
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    except CompileError as e:
-        record_from_output(str(e), success=False)
-        return {"success": False, "error": str(e), "diagnostics": [], "artifacts": []}
+    result = build_project(root)
+    packed = result.get("packed")
+    if isinstance(packed, dict):
+        return packed
+    return {
+        "success": False,
+        "error": result.get("reason") or result.get("stderr") or "compile unavailable",
+        "diagnostics": result.get("diagnostics") or [],
+        "artifacts": result.get("artifacts") or [],
+        "exit_code": result.get("exit_code"),
+        "stdout": result.get("stdout") or "",
+        "stderr": result.get("stderr") or "",
+    }
 
 
 @app.get("/api/projects/{project_id}/artifacts")
@@ -421,11 +443,19 @@ def artifact_download(project_id: str, name: str) -> FileResponse:
 @app.post("/api/projects/{project_id}/flash")
 def flash(project_id: str) -> dict[str, Any]:
     try:
-        return flash_elf(project_root(project_id))
+        root = project_root(project_id)
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
-    except FlashError as e:
-        raise HTTPException(400, str(e)) from None
+    result = flash_firmware(root)
+    if result.get("success"):
+        return {
+            "success": True,
+            "exit_code": result.get("exit_code"),
+            "output": result.get("output") or result.get("stderr") or "",
+            "chip": result.get("chip"),
+        }
+    reason = str(result.get("reason") or result.get("stderr") or "flash failed")
+    raise HTTPException(400, reason) from None
 
 
 @app.post("/api/runs")

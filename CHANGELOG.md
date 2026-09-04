@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.0-alpha-mcp — Embedded Engineering Runtime
+
+### Added
+- CEA Core façade (`backend/app/core`) shared by Web, MCP, and CLI
+- MCP Server v0.1 stdio (`python scripts/cea_mcp.py` / `python -m app.mcp`)
+- STM32 Skill Pack under `skills/`
+- CLI: `python -m app.cli inspect|build|mcp`
+- Docs: ARCHITECTURE, MCP, MCP_TOOLS, SKILLS, HARNESS_INTEGRATION, docs/SECURITY, MIGRATION
+- Core / MCP tests; MCP benchmark runner (honest SKIP without LLM)
+
+### Changed
+- Product positioning: Embedded Engineering Runtime for AI Coding Agents
+- Web build / flash / scan / serial ports / hardware-run call Core
+- Unused Universal AI Gateway tree moved to `legacy/universal-ai-gateway/`
+
+### Unchanged
+- STM32F103-only production matrix
+- Workbench 2.0 / MyOS UI
+- Official HAL template and Golden projects
+- Honesty rules: no fake Build / Flash / Serial / Hardware PASS
+
 ## Unreleased — MyOS P0 overlay
 
 Added a Work OS layer on C-Agent Workbench 2.0 without replacing firmware execution.

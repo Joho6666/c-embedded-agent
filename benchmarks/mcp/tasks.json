@@ -1,0 +1,18 @@
+[
+  {
+    "id": "mcp-01-inspect-led",
+    "skill": "stm32-project",
+    "prompt": "Inspect the STM32F103 LED golden project.",
+    "project": "examples/golden/stm32f103_led",
+    "must_compile": false,
+    "hardware": false
+  },
+  {
+    "id": "mcp-02-build-usart",
+    "skill": "stm32-build-flash-validate",
+    "prompt": "Build the USART golden project with CEA Core.",
+    "project": "examples/golden/stm32f103_usart",
+    "must_compile": true,
+    "hardware": false
+  }
+]

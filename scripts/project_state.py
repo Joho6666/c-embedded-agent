@@ -12,17 +12,46 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 
+def _collect_platforms_pure_python(root: Path) -> dict[str, dict]:
+    platforms = {}
+    adapter_paths = [
+        root / "backend" / "app" / "platforms" / "stm32f103" / "adapter.py",
+        root / "backend" / "app" / "platforms" / "esp32s3" / "adapter.py",
+    ]
+    for p in adapter_paths:
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding="utf-8")
+        aid_m = re.search(r'adapter_id="([^"]+)"', text)
+        status_m = re.search(r'status="([^"]+)"', text)
+        plat_m = re.search(r'platform="([^"]+)"', text)
+        mcu_m = re.search(r'mcu="([^"]+)"', text)
+        fw_m = re.search(r'framework="([^"]+)"', text)
+        if aid_m and status_m:
+            aid = aid_m.group(1)
+            platforms[aid] = {
+                "id": aid,
+                "status": status_m.group(1),
+                "platform": plat_m.group(1) if plat_m else "",
+                "mcu": mcu_m.group(1) if mcu_m else "",
+                "framework": fw_m.group(1) if fw_m else "",
+            }
+    return platforms
+
+
 def collect_state() -> dict:
-    from app.platforms.registry import default_registry
+    try:
+        from app.platforms.registry import default_registry
+
+        registry = default_registry(ROOT)
+        platforms = registry.list_platforms()
+        platform_map = {p["id"]: p for p in platforms}
+    except (ImportError, Exception):
+        platform_map = _collect_platforms_pure_python(ROOT)
 
     # 1. Version
     version_file = ROOT / "VERSION"
     version = version_file.read_text(encoding="utf-8").strip() if version_file.is_file() else "0.8.0-beta"
-
-    # 2. Platforms from registry
-    registry = default_registry(ROOT)
-    platforms = registry.list_platforms()
-    platform_map = {p["id"]: p for p in platforms}
 
     # 3. Golden counts
     stm32_golden = sorted(p.name for p in (ROOT / "examples" / "golden").iterdir() if p.is_dir() and p.name != "overlays" and (p / "Makefile").is_file())

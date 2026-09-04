@@ -140,6 +140,7 @@ class PlatformRegistry:
 
 def default_registry(repo_root: Path) -> PlatformRegistry:
     from app.platforms.esp32s3.adapter import Esp32S3IdfAdapter
+    from app.platforms.mcu8051.adapter import Mcu8051SdccAdapter
     from app.platforms.stm32f103.adapter import Stm32F103Adapter
 
     root = Path(repo_root)
@@ -151,6 +152,10 @@ def default_registry(repo_root: Path) -> PlatformRegistry:
     registry.register(
         Esp32S3IdfAdapter(root),
         aliases=("esp32s3", "esp32-s3", "esp-idf", "devkitc-1"),
+    )
+    registry.register(
+        Mcu8051SdccAdapter(root),
+        aliases=("8051", "c51", "stc89c52", "stc89c52rc", "at89c51", "sdcc"),
     )
     return registry
 

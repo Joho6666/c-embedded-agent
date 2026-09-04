@@ -17,6 +17,7 @@ def _collect_platforms_pure_python(root: Path) -> dict[str, dict]:
     adapter_paths = [
         root / "backend" / "app" / "platforms" / "stm32f103" / "adapter.py",
         root / "backend" / "app" / "platforms" / "esp32s3" / "adapter.py",
+        root / "backend" / "app" / "platforms" / "mcu8051" / "adapter.py",
     ]
     for p in adapter_paths:
         if not p.is_file():
@@ -72,7 +73,7 @@ def collect_state() -> dict:
     ci_jobs = []
     if ci_file.is_file():
         ci_text = ci_file.read_text(encoding="utf-8")
-        for job in ("backend", "frontend", "stm32-golden", "esp32-smoke", "quality"):
+        for job in ("backend", "frontend", "stm32-golden", "esp32-smoke", "esp32-golden", "quality"):
             if f"  {job}:" in ci_text:
                 ci_jobs.append(job)
 

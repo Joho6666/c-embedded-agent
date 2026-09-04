@@ -11,7 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.agent.runtime import RUNS, AgentRun, event_stream, request_stop, resolve_approval, run_agent
+from app.agent.checkpoint import get_checkpoint_path, load_run_checkpoint
+from app.agent.runtime import RUNS, AgentRun, event_stream, request_stop, resolve_approval, resume_run, run_agent
 from app.config.settings import settings
 from app.db import list_runs, load_run
 from app.platforms.registry import default_registry
@@ -531,6 +532,23 @@ async def approve(run_id: str, body: ApproveBody | None = None) -> dict[str, str
     decision = (body.decision if body else "approved") or "approved"
     resolve_approval(run, decision, body.approvalId if body else None)
     return {"ok": "1", "decision": run.approval_decision}
+
+
+@app.get("/api/runs/{run_id}/checkpoint")
+def get_checkpoint(run_id: str) -> dict[str, Any]:
+    cp = load_run_checkpoint(run_id, settings.repo_root)
+    if not cp:
+        raise HTTPException(404, "checkpoint not found")
+    return cp.to_dict()
+
+
+@app.post("/api/runs/{run_id}/resume")
+async def resume(run_id: str) -> dict[str, Any]:
+    try:
+        run = await resume_run(run_id)
+        return {"ok": "1", "id": run.id, "status": run.status, "resumed": True}
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from None
 
 
 @app.post("/api/agent/runs")

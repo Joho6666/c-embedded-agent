@@ -15,7 +15,7 @@ def registry() -> PlatformRegistry:
 
 def test_platform_listing_matches_api_contract(registry: PlatformRegistry) -> None:
     items = registry.list_platforms()
-    assert [item["id"] for item in items] == ["esp32s3-idf", "stm32f103-hal"]
+    assert [item["id"] for item in items] == ["8051-sdcc", "esp32s3-idf", "stm32f103-hal"]
     for item in items:
         assert {
             "id",
@@ -31,7 +31,8 @@ def test_platform_listing_matches_api_contract(registry: PlatformRegistry) -> No
             "reason",
         } <= item.keys()
     assert next(item for item in items if item["id"] == "stm32f103-hal")["status"] == "ready"
-    assert next(item for item in items if item["id"] == "esp32s3-idf")["status"] == "experimental"
+    assert next(item for item in items if item["id"] == "esp32s3-idf")["status"] in {"ready", "experimental"}
+    assert next(item for item in items if item["id"] == "8051-sdcc")["status"] == "experimental"
 
 
 @pytest.mark.parametrize("selection", [

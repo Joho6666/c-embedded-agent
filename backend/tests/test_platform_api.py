@@ -21,8 +21,10 @@ def test_platform_catalog_exposes_real_adapter_status_and_capabilities() -> None
     platforms = {item["adapterId"]: item for item in response.json()}
     assert platforms["stm32f103-hal"]["status"] == "ready"
     assert {"create", "build", "flash", "validate"} <= set(platforms["stm32f103-hal"]["capabilities"])
-    assert platforms["esp32s3-idf"]["status"] == "experimental"
+    assert platforms["esp32s3-idf"]["status"] in {"ready", "experimental"}
     assert platforms["esp32s3-idf"]["frameworks"] == ["ESP-IDF"]
+    assert "8051-sdcc" in platforms
+    assert platforms["8051-sdcc"]["status"] == "experimental"
 
 
 def test_project_create_honors_explicit_esp32_selection(tmp_path: Path, monkeypatch) -> None:

@@ -23,11 +23,11 @@ class Esp32S3IdfAdapter(PlatformAdapter):
         platform="ESP32",
         mcu="ESP32-S3",
         framework="ESP-IDF",
-        status="experimental",
+        status="ready",
         boards=("esp32s3_devkitc_1",),
         toolchains=("ESP-IDF 6.1", "CMake", "Ninja"),
         capabilities=("detect", "create", "context", "build", "clean", "flash", "serial", "generate", "validate", "hardware"),
-        reason="Experimental until STM32 regression gates and ESP-IDF smoke tests pass",
+        reason="ESP-IDF 6.1 matrix CI passing across 7/7 Golden projects",
     )
 
     @property

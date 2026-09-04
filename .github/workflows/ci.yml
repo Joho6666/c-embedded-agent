@@ -68,6 +68,28 @@ jobs:
           espressif/idf:v6.1
           bash -lc "cd /project/templates/esp32s3_idf && idf.py set-target esp32s3 && idf.py build"
 
+  esp32-golden:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - esp32s3_adc
+          - esp32s3_freertos_task
+          - esp32s3_gpio_blink
+          - esp32s3_i2c
+          - esp32s3_pwm_ledc
+          - esp32s3_spi
+          - esp32s3_uart
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ESP32-S3 ${{ matrix.project }} with ESP-IDF 6.1
+        run: >-
+          docker run --rm
+          -v "$PWD:/project"
+          espressif/idf:v6.1
+          bash -lc "cd /project/examples/golden_esp32/${{ matrix.project }} && idf.py set-target esp32s3 && idf.py build"
+
   quality:
     runs-on: ubuntu-latest
     steps:

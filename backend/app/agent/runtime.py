@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+from app.agent.checkpoint import RunCheckpoint, load_run_checkpoint, save_run_checkpoint
 from app.agent.context import build_context, context_prompt
 from app.agent.context_router import replace_current_context
 from app.agent.planner import looks_complex, make_plan
@@ -81,6 +82,33 @@ class AgentRun:
         self.input_tokens = 0
         self.output_tokens = 0
         self.latency_ms = 0
+        self.phase = "init"
+        self.messages: list[dict[str, Any]] = []
+        self.action_plan: dict[str, Any] | None = None
+
+    def create_checkpoint(self) -> RunCheckpoint:
+        return RunCheckpoint(
+            run_id=self.id,
+            project_id=self.project_id,
+            prompt=self.prompt,
+            mode=self.mode,
+            status=self.status,
+            phase=self.phase,
+            iteration=self.iteration,
+            max_iterations=settings.max_agent_iterations,
+            messages=self.messages,
+            last_errors=self.last_errors,
+            citations=self.citations,
+            snapshot_sha=self.snapshot_sha,
+            action_plan=self.action_plan,
+            loaded_skills=self.loaded_skills,
+            serial_device=self.serial_device,
+            serial_baud=self.serial_baud,
+            expect=self.expect,
+        )
+
+    def save_checkpoint(self) -> None:
+        save_run_checkpoint(self.create_checkpoint(), settings.repo_root)
 
     def cancelled(self) -> bool:
         return self.cancel_event.is_set() or self.status == "cancelled"
@@ -106,6 +134,33 @@ class AgentRun:
 RUNS: dict[str, AgentRun] = {}
 
 
+def restore_run_from_checkpoint(checkpoint: RunCheckpoint) -> AgentRun:
+    run = AgentRun(checkpoint.run_id, checkpoint.project_id, checkpoint.prompt, checkpoint.mode)
+    run.status = "running"
+    run.phase = checkpoint.phase
+    run.iteration = checkpoint.iteration
+    run.messages = list(checkpoint.messages)
+    run.last_errors = list(checkpoint.last_errors)
+    run.citations = list(checkpoint.citations)
+    run.snapshot_sha = checkpoint.snapshot_sha
+    run.action_plan = checkpoint.action_plan
+    run.loaded_skills = list(checkpoint.loaded_skills)
+    run.serial_device = checkpoint.serial_device
+    run.serial_baud = checkpoint.serial_baud
+    run.expect = checkpoint.expect
+    RUNS[run.id] = run
+    return run
+
+
+async def resume_run(run_id: str) -> AgentRun:
+    cp = load_run_checkpoint(run_id, settings.repo_root)
+    if not cp:
+        raise ValueError(f"No checkpoint found for run {run_id}")
+    run = restore_run_from_checkpoint(cp)
+    run.task = asyncio.create_task(run_agent(run))
+    return run
+
+
 async def event_stream(run_id: str) -> AsyncIterator[str]:
     run = RUNS[run_id]
     while True:
@@ -120,6 +175,8 @@ async def request_stop(run: AgentRun) -> None:
     run.approval_decision = "rejected"
     run.approval_event.set()
     run.status = "cancelled"
+    run.phase = "cancelled"
+    run.save_checkpoint()
     if run.task and not run.task.done():
         run.task.cancel()
         try:
@@ -512,6 +569,9 @@ async def run_agent(run: AgentRun) -> None:
             adapterId=adapter.adapter_id,
         )
         plan = make_plan(run.prompt)
+        run.action_plan = {"steps": plan}
+        run.phase = "plan"
+        run.save_checkpoint()
         run.emit(
             type="plan",
             status="running",
@@ -614,6 +674,9 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
         latency = int((time.perf_counter() - t0) * 1000)
         choice = data["choices"][0]["message"]
         messages.append(choice)
+        run.messages = messages
+        run.phase = "reasoning"
+        run.save_checkpoint()
         tool_calls = choice.get("tool_calls") or []
         usage = data.get("usage") or {}
         run.input_tokens += int(usage.get("prompt_tokens") or 0)
@@ -720,5 +783,9 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
                 if fn == "retrieve_knowledge":
                     run.emit(type="knowledge_result", status="success", title="知识检索", description=result[:800])
             messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": str(result)[:8000]})
+            run.messages = messages
+            run.save_checkpoint()
     run.emit(type="error", status="failed", title="达到最大迭代次数")
     run.status = "failed"
+    run.phase = "done"
+    run.save_checkpoint()

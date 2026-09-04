@@ -1,0 +1,11 @@
+{
+  "name": "8051 UART Echo",
+  "adapterId": "8051-sdcc",
+  "platform": "8051",
+  "mcu": "STC89C52RC",
+  "framework": "SDCC",
+  "board": "stc89c52_dev",
+  "toolchain": "SDCC",
+  "peripheral": "UART",
+  "marker": "CEA:8051:PASS"
+}

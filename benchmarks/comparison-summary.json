@@ -13,7 +13,7 @@
   ],
   "reason": "LLM not configured — not faking Agent vs Baseline",
   "environment": {
-    "gitCommitSha": "62634ef77cc45c2fa498863b43ccbc78224d695c",
+    "gitCommitSha": "7047dddcaf4dea80e47c37f39c76c36f9c6f5c50",
     "os": "Windows-11-10.0.26200-SP0",
     "python": "3.14.6",
     "node": "v24.14.1",

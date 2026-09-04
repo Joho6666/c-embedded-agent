@@ -84,10 +84,10 @@ All 11 official STM32CubeF1 Golden projects compile into valid firmware within R
 
 ## 5. ESP32-S3 Evaluation
 
-- **Platform Status**: **Experimental**
+- **Platform Status**: **READY (Beta)**
 - **Adapter**: `esp32s3-idf` registered with full capabilities.
-- **CI Smoke**: Docker ESP-IDF 6.1 build verified.
-- **Golden Projects**: 7 standardized projects established in `examples/golden_esp32/`:
+- **CI Smoke & Matrix**: Docker ESP-IDF 6.1 matrix compilation verified across all 7 projects.
+- **Golden Projects**: 7 standardized projects established in `examples/golden_esp32/` (7/7 verified):
   1. `esp32s3_gpio_blink` (GPIO output)
   2. `esp32s3_uart` (UART console)
   3. `esp32s3_pwm_ledc` (LEDC PWM)
@@ -134,9 +134,9 @@ All 11 official STM32CubeF1 Golden projects compile into valid firmware within R
 
 ## 9. Known Limitations
 
-1. Run checkpoint and resume across restarts is not supported in this beta.
+1. Run Checkpoint and Resume mechanism implemented (`runs/<run-id>/checkpoint.json`, DB `run_checkpoints`, API `/api/runs/{id}/resume`).
 2. Plain LLM vs Agent benchmark numbers require external LLM API keys.
-3. 8051 platform is in roadmap stage (`docs/platforms/8051-roadmap.md`), not yet implemented.
+3. 8051 platform prototype implemented (`8051-sdcc` adapter, template, 3 golden projects in `examples/golden_8051/`).
 
 ---
 

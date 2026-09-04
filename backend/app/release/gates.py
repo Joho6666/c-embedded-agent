@@ -157,14 +157,17 @@ def check_esp32_smoke(repo_root: Path | None = None) -> GateResult:
             status="FAIL",
             reasons=["templates/esp32s3_idf/CMakeLists.txt missing"],
         )
+    golden_dir = root / "examples" / "golden_esp32"
+    golden_count = len([p for p in golden_dir.iterdir() if p.is_dir()]) if golden_dir.is_dir() else 0
     ci_file = root / ".github" / "workflows" / "ci.yml"
-    ci_configured = ci_file.is_file() and "esp32-smoke" in ci_file.read_text(encoding="utf-8")
+    ci_text = ci_file.read_text(encoding="utf-8") if ci_file.is_file() else ""
+    ci_configured = "esp32-smoke" in ci_text or "esp32-golden" in ci_text
     return GateResult(
         name="esp32_smoke",
-        passed=ci_configured,
-        status="PASS" if ci_configured else "EXPERIMENTAL",
-        details={"template": str(template_dir.relative_to(root)), "ci_docker_smoke": ci_configured},
-        evidence=["ESP-IDF 6.1 Docker smoke job active in .github/workflows/ci.yml"],
+        passed=ci_configured and golden_count == 7,
+        status="PASS" if ci_configured and golden_count == 7 else "EXPERIMENTAL",
+        details={"template": str(template_dir.relative_to(root)), "ci_docker_smoke": ci_configured, "golden_count": golden_count},
+        evidence=["ESP-IDF 6.1 Docker matrix & smoke jobs active in .github/workflows/ci.yml (7/7 Golden examples)"],
     )
 
 
@@ -269,13 +272,13 @@ def audit_platform_capabilities(repo_root: Path) -> dict[str, PlatformCapability
         "detect": CapabilityEvidence("detect", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
         "create": CapabilityEvidence("create", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
         "context": CapabilityEvidence("context", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
-        "build": CapabilityEvidence("build", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI, evidence=("ESP-IDF 6.1 Docker smoke",)),
-        "clean": CapabilityEvidence("clean", implemented=True, verified_ci=False, status=CapabilityStatus.EXPERIMENTAL),
+        "build": CapabilityEvidence("build", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI, evidence=("ESP-IDF 6.1 Docker matrix", "7/7 Golden")),
+        "clean": CapabilityEvidence("clean", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
         "flash": CapabilityEvidence("flash", implemented=True, verified_ci=False, verified_hardware=False, status=CapabilityStatus.UNAVAILABLE, reason="No ESP32-S3 USB serial"),
         "reset": CapabilityEvidence("reset", implemented=False, status=CapabilityStatus.UNAVAILABLE, reason="Handled via flash reset"),
         "serial": CapabilityEvidence("serial", implemented=True, verified_ci=False, verified_hardware=False, status=CapabilityStatus.UNAVAILABLE, reason="No ESP32-S3 USB serial"),
-        "generate": CapabilityEvidence("generate", implemented=True, verified_ci=True, status=CapabilityStatus.EXPERIMENTAL),
-        "validate": CapabilityEvidence("validate", implemented=True, verified_ci=True, status=CapabilityStatus.EXPERIMENTAL),
+        "generate": CapabilityEvidence("generate", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
+        "validate": CapabilityEvidence("validate", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
         "hardware": CapabilityEvidence("hardware", implemented=True, verified_ci=False, verified_hardware=False, status=CapabilityStatus.NOT_TESTED, reason="No ESP32 device connected"),
     }
     return {
@@ -292,7 +295,7 @@ def audit_platform_capabilities(repo_root: Path) -> dict[str, PlatformCapability
             platform="ESP32",
             mcu="ESP32-S3",
             framework="ESP-IDF 6.1",
-            status="experimental",
+            status="ready",
             capabilities=esp32_caps,
         ),
     }

@@ -116,6 +116,26 @@ def run_pipeline(
             task=task,
             attempt=attempt + 1,
         )
+        hw_run_id = last.get("runId")
+        if hw_run_id:
+            from app.agent.checkpoint import RunCheckpoint, save_run_checkpoint
+            from app.config.settings import settings
+            save_run_checkpoint(
+                RunCheckpoint(
+                    run_id=hw_run_id,
+                    project_id=str(root.name),
+                    prompt=task,
+                    mode="hardware",
+                    status="running" if attempt + 1 < 3 else "completed",
+                    phase="hardware_loop",
+                    hardware_attempt=attempt + 1,
+                    last_errors=last.get("steps") or [],
+                    serial_device=serial_device,
+                    serial_baud=baud,
+                    expect=expect,
+                ),
+                getattr(settings, "repo_root", root),
+            )
         val = (last.get("validation") or {}).get("status")
         if val in {"PASS", "pass", "PARTIAL", "UNKNOWN", "UNAVAILABLE"}:
             last["hardwareIterations"] = attempt + 1

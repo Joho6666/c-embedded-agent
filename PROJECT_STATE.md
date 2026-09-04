@@ -1,15 +1,16 @@
 # Project State
 
-Version target: **0.9.0-beta — IN PROGRESS**. Baseline: `db3279164048b12ad08eba1e533de5297f3bdf21`.
+Version target: **0.9.0-beta — IN PROGRESS**. Baseline: `codex/v0.9-multi-platform`.
 
 | Phase | State | Exit evidence |
 |---|---|---|
-| 0 Audit/characterization | IMPLEMENTED | Audit plus path, permission, API and hardware characterization tests |
-| 1 Harness | IMPLEMENTED | Governance docs and local gates present |
-| 2 STM32 adapter | IMPLEMENTED | Runtime/API/workspace delegate through `stm32f103-hal` |
-| 3 Agent registries/routers | IMPLEMENTED | Tool, workflow, skill and budgeted context routing integrated |
-| 4 STM32 gate | PASS (local) | 130 passed, 1 OS symlink skip; frontend build PASS; 11/11 ARM GCC 13.3 Golden PASS |
-| 5 ESP32-S3 | EXPERIMENTAL | Minimal adapter/template implemented; local ESP-IDF smoke SKIPPED because Docker daemon/ESP-IDF unavailable |
-| 6 CI/benchmark | IMPLEMENTED / EVAL SKIPPED | Five CI jobs and 50 tasks; LLM benchmark remains SKIPPED without credentials |
+| 0 Audit & Characterization | IMPLEMENTED | Path traversal, permission, API, and hardware characterization tests passing |
+| 1 Harness & Governance | IMPLEMENTED | AGENTS.md repository map, docs/INDEX.md, and local/CI quality gates active |
+| 2 STM32 Platform Adapter | READY (Beta) | 11/11 Golden projects compile via official CubeF1 HAL with ARM GCC 13.3.1; controlled 3-iteration hardware loop |
+| 3 Agent Registries & Routing | IMPLEMENTED | Tool Registry with risk/approval metadata, Skill Registry (STM32 + ESP32), Workflow Router (6 core workflows), Context Router with source tracking |
+| 4 Evidence & Release Gates | IMPLEMENTED | `backend/app/release/gates.py` unified gate checker; strict NO FAKE PASS enforcement |
+| 5 ESP32-S3 Platform | EXPERIMENTAL | Adapter, template, 7 golden examples (`examples/golden_esp32/`), and CI Docker ESP-IDF 6.1 smoke active |
+| 6 CI & Benchmarks | 5/5 CI GATES PASS | Backend (pytest-asyncio), Frontend (Next.js build), STM32 Golden (11/11), ESP32 Smoke (Docker), Quality (secrets + 50 tasks schema + drift check) |
+| 7 Hardware Execution | NOT_TESTED | No physical ST-Link probe connected; NO FAKE PASS; honest reporting |
 
-Known limits: run checkpoint/restart is out of scope; hardware and LLM evaluations require external resources; ESP32-S3 remains experimental pending the ESP-IDF 6.1 CI smoke; no other platform may be advertised as supported. Version files remain 0.8.0-beta until every release gate has evidence.
+Known limits: run checkpoint/restart is out of scope; hardware and LLM evaluations require external physical and API resources; ESP32-S3 remains experimental pending full physical test bench; 8051 roadmap documented in `docs/platforms/8051-roadmap.md` (planned, not claimed supported).

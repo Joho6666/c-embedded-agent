@@ -126,7 +126,7 @@ def _version_payload() -> dict[str, Any]:
             cube = None
     return {
         "appVersion": app_ver,
-        "agentRuntimeVersion": "0.8.0-beta",
+        "agentRuntimeVersion": app_ver,
         "templateVersion": "stm32f103_hal_official",
         "stm32cubef1Version": (cube or {}).get("STM32CubeF1") or (cube or {}).get("hal") or "STM32CubeF1 in-tree",
         "vendor": cube,

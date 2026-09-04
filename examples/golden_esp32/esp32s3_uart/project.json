@@ -1,0 +1,11 @@
+{
+  "name": "ESP32-S3 UART Communication",
+  "adapterId": "esp32s3-idf",
+  "platform": "ESP32",
+  "mcu": "ESP32-S3",
+  "framework": "ESP-IDF",
+  "board": "ESP32-S3-DevKitC-1",
+  "toolchain": "ESP-IDF 6.1",
+  "peripheral": "UART",
+  "marker": "CEA:ESP32:PASS"
+}

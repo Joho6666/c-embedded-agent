@@ -11,10 +11,27 @@ REQUIRED_TASK_FIELDS = {"id", "prompt", "platform", "category", "fixture", "orac
 
 def main() -> int:
     failures: list[str] = []
-    required_docs = ["AGENTS.md", "CURRENT_ARCHITECTURE.md", "PROJECT_STATE.md", "ARCHITECTURE.md", "docs/INDEX.md"]
+    required_docs = [
+        "AGENTS.md",
+        "CURRENT_ARCHITECTURE.md",
+        "PROJECT_STATE.md",
+        "ARCHITECTURE.md",
+        "docs/INDEX.md",
+        "docs/platforms/8051-roadmap.md",
+    ]
     for name in required_docs:
         if not (ROOT / name).is_file():
             failures.append(f"missing {name}")
+
+    # Check documentation drift via project_state
+    try:
+        from project_state import check_documentation_drift, collect_state
+
+        state = collect_state()
+        drift = check_documentation_drift(state)
+        failures.extend(drift)
+    except Exception as exc:
+        failures.append(f"drift check failed: {exc}")
 
     tasks = []
     for path in sorted((ROOT / "benchmarks" / "stm32f103").glob("*.json")):

@@ -1,27 +1,29 @@
 # C-Embedded Agent
 
-AI firmware engineering agent for STM32F103 — requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
+AI firmware engineering agent for embedded C.
 
-Version: **0.8.0-beta** (Late Beta). Not a Production Candidate: Agent vs Baseline was not executed (no LLM configured on this machine).
+```text
+Requirement
+→ Understand Project
+→ Generate/Patch
+→ Build
+→ Diagnose
+→ Auto Fix
+→ Flash
+→ Hardware Validate
+```
 
-The v0.9 multi-platform architecture is **in progress**. The current release remains 0.8.0-beta until STM32 regression, exact ARM GCC Golden builds, ESP32 smoke (when its adapter lands), benchmark, and hardware evidence gates are reported honestly. See `PROJECT_STATE.md`.
-
-The evaluation question is not “how many pages were added?”. It is:
-
-- On the same STM32F103 task, how often does a plain LLM compile?
-- How often does C-Embedded Agent compile and pass semantic validation?
+Version: **0.9.0-beta** (Engineering Beta). Not a Production Candidate: Physical hardware testing is incomplete, and Agent vs Baseline evaluation was skipped without LLM credentials. See `PROJECT_STATE.md` and `RELEASE_REPORT.md`.
 
 ## Support Matrix
 
-| Platform | Build | Agent | Flash | Hardware Validate |
-|---|---|---|---|---|
-| STM32F103 HAL | ✅ | Beta | Beta | Beta |
-| ESP32-S3 ESP-IDF 6.1 | Experimental | Experimental | Requires detected device | Requires detected device |
-| STM32F407 | ❌ | ❌ | ❌ | ❌ |
-| ESP32 | ❌ | ❌ | ❌ | ❌ |
-| 8051 | ❌ | ❌ | ❌ | ❌ |
+| Platform | Framework | Status |
+|---|---|---|
+| STM32F103 | CubeF1 HAL | Beta |
+| ESP32-S3 | ESP-IDF | Experimental |
+| 8051 | — | Planned |
 
-Do not claim generic ESP32 / 8051 / F407 are available. Only the registered `esp32s3-idf` target is exposed, and remains experimental until its ESP-IDF 6.1 smoke gate runs successfully.
+Do not claim generic ESP32 / 8051 / STM32F4 / RP2040 / nRF52 are available. Only `stm32f103-hal` (Beta) and `esp32s3-idf` (Experimental) are registered in the runtime.
 
 ## Modes
 

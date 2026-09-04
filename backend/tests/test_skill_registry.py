@@ -9,7 +9,8 @@ from app.skills.schema import SkillValidationError
 
 def test_split_catalog_is_valid_and_disabled_skill_does_not_auto_match() -> None:
     registry = default_skill_registry()
-    assert len(registry.list()) == 11
+    assert len(registry.list(platform="stm32f103")) == 11
+    assert len(registry.list(platform="esp32s3-idf")) == 2
     assert registry.get("freertos").enabled is False
     assert SkillRouter(registry).select("use FreeRTOS", platform="stm32f103").skills == ()
 

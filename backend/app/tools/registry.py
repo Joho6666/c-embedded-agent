@@ -52,9 +52,29 @@ class ToolSpec:
     approval: ApprovalPolicy = ApprovalPolicy.NEVER
     availability: Availability = True
     group: str | None = None
+    platforms: tuple[str, ...] = ("all",)
+    risk: str = "safe"
+    requires_approval: bool = False
+    writes_files: bool = False
+    uses_hardware: bool = False
+    timeout: int = 30
 
     def openai_schema(self) -> dict[str, Any]:
         return {"type": "function", "function": {"name": self.name, "description": self.description, "parameters": dict(self.schema)}}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "effect": self.effect.value,
+            "group": self.group,
+            "platforms": list(self.platforms),
+            "risk": self.risk,
+            "requiresApproval": self.requires_approval,
+            "writesFiles": self.writes_files,
+            "usesHardware": self.uses_hardware,
+            "timeout": self.timeout,
+        }
 
     def available(self) -> tuple[bool, str | None]:
         value = self.availability() if callable(self.availability) else self.availability
@@ -194,9 +214,49 @@ def _object(properties: dict[str, Any] | None = None, required: list[str] | None
     return schema
 
 
-def _spec(name: str, description: str, effect: ToolEffect, properties: dict[str, Any] | None = None, required: list[str] | None = None) -> ToolSpec:
+def _spec(
+    name: str,
+    description: str,
+    effect: ToolEffect,
+    properties: dict[str, Any] | None = None,
+    required: list[str] | None = None,
+    *,
+    platforms: tuple[str, ...] = ("all",),
+    risk: str | None = None,
+    requires_approval: bool | None = None,
+    writes_files: bool | None = None,
+    uses_hardware: bool | None = None,
+    timeout: int | None = None,
+) -> ToolSpec:
     approval = ApprovalPolicy.ALWAYS if effect is ToolEffect.DEVICE else ApprovalPolicy.MODE_DEPENDENT if effect is ToolEffect.WORKSPACE_WRITE else ApprovalPolicy.NEVER
-    return ToolSpec(name, description, _object(properties, required), effect=effect, approval=approval, group=effect.value)
+    eff_risk = risk or ("hardware" if effect is ToolEffect.DEVICE else "write" if effect is ToolEffect.WORKSPACE_WRITE else "safe")
+    eff_approval = requires_approval if requires_approval is not None else (effect in {ToolEffect.DEVICE, ToolEffect.WORKSPACE_WRITE})
+    eff_writes = writes_files if writes_files is not None else (effect is ToolEffect.WORKSPACE_WRITE)
+    eff_hw = uses_hardware if uses_hardware is not None else (effect is ToolEffect.DEVICE)
+    eff_timeout = timeout if timeout is not None else (120 if effect is ToolEffect.BUILD else 30)
+
+    # Derive platforms
+    eff_platforms = platforms
+    if any(k in name for k in ("hal_module", "usart", "adc", "pwm", "i2c", "spi", "exti", "register")):
+        if "esp32" in name:
+            eff_platforms = ("esp32s3-idf", "esp32")
+        elif any(k in name for k in ("hal_module", "register", "pin_info", "mcu_info")):
+            eff_platforms = ("stm32f103-hal", "stm32")
+
+    return ToolSpec(
+        name,
+        description,
+        _object(properties, required),
+        effect=effect,
+        approval=approval,
+        group=effect.value,
+        platforms=eff_platforms,
+        risk=eff_risk,
+        requires_approval=eff_approval,
+        writes_files=eff_writes,
+        uses_hardware=eff_hw,
+        timeout=eff_timeout,
+    )
 
 
 _S = {"type": "string"}

@@ -26,6 +26,8 @@
 *.map
 !templates/**/startup_*.s
 benchmarks/**/results.json
+/runs/
+/benchmark-results/
 
 # production
 /build

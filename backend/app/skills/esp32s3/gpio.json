@@ -1,0 +1,57 @@
+{
+  "id": "esp32s3-gpio",
+  "name": "ESP32-S3 GPIO",
+  "platform": "ESP32",
+  "platforms": [
+    "esp32s3-idf",
+    "esp32"
+  ],
+  "mcu": "ESP32-S3",
+  "framework": "ESP-IDF",
+  "description": "ESP32-S3 GPIO configuration using ESP-IDF driver/gpio.h",
+  "triggers": [
+    "gpio",
+    "led",
+    "blink",
+    "esp32s3 gpio"
+  ],
+  "exclusions": [],
+  "capabilities": [
+    "Output",
+    "Input",
+    "PullUp",
+    "PullDown"
+  ],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "validators": [
+    {
+      "id": "gpio4",
+      "label": "GPIO_NUM_4 initialized"
+    }
+  ],
+  "golden_examples": [
+    {
+      "id": "esp32s3-blink",
+      "title": "ESP32-S3 GPIO Blink",
+      "path": "examples/golden_esp32/esp32s3_gpio_blink"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "gpio_reset_pin undeclared",
+      "hint": "Include driver/gpio.h"
+    }
+  ],
+  "context_level": "FOCUSED",
+  "enabled": true,
+  "status": "ready",
+  "version": "0.9.0-beta"
+}

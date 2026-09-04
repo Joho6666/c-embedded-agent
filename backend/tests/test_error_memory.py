@@ -80,3 +80,26 @@ def test_match_known_errors_signatures() -> None:
     assert any(h["id"] == "hal-spi-init-undef" for h in hits)
     hits = match_known_errors("undefined reference to DMA1_Channel5_IRQHandler")
     assert any(h["id"] == "dma-handler-missing" for h in hits)
+
+
+def test_structured_error_memory_verified_count() -> None:
+    from app.tools.error_memory import get_error, mark_fix_result
+
+    item = get_error("hal-uart-init-undef")
+    assert item is not None
+    assert "error_signature" in item
+    assert "platform" in item
+    assert "confidence" in item
+    assert "verified_count" in item
+    initial_verified = item["verified_count"]
+
+    # Success increments verified_count
+    mark_fix_result("hal-uart-init-undef", success=True)
+    item_after_ok = get_error("hal-uart-init-undef")
+    assert item_after_ok["verified_count"] == initial_verified + 1
+    assert item_after_ok["last_verified"] is not None
+
+    # Failure does NOT increment verified_count
+    mark_fix_result("hal-uart-init-undef", success=False)
+    item_after_fail = get_error("hal-uart-init-undef")
+    assert item_after_fail["verified_count"] == initial_verified + 1

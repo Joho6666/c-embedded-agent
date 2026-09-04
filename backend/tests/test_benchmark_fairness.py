@@ -62,3 +62,15 @@ def test_missing_requirements_are_skipped_without_zero_percentages(monkeypatch, 
     assert summary["finalCompileSuccess"] is None
     assert comparison["baselineCompileSuccess"] is None
     assert comparison["agentCompileSuccess"] is None
+
+
+def test_reproducible_metadata_contains_required_fields() -> None:
+    meta = benchmark.collect_environment_metadata("test-model", "https://api.openai.com/v1")
+    assert "gitCommitSha" in meta
+    assert "os" in meta
+    assert "python" in meta
+    assert meta["model"] == "test-model"
+    assert meta["baseUrlHost"] == "api.openai.com"
+    # Never leak API key or full URL with credentials
+    assert "apiKey" not in meta
+    assert "test-key" not in str(meta)

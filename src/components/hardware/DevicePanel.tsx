@@ -19,12 +19,15 @@ export function DevicePanel() {
 
   useEffect(() => {
     if (mode !== "live") return;
-    void fetch(`${API_BASE}/api/tools/status`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows: Array<{ id: string; installed?: boolean; version?: string }>) => {
-        const t = rows.find((x) => x.id === "stlink" || x.id === "openocd");
-        if (!t) setStlink("Not detected");
-        else setStlink(t.installed ? t.version || "Connected" : "Disconnected");
+    void fetch(`${API_BASE}/api/devices`)
+      .then((r) => (r.ok ? r.json() : { probes: [], ports: [] }))
+      .then((data: { probes?: Array<{ id: string; presence?: string; detail?: string }>; ports?: Array<{ id: string; presence?: string }> }) => {
+        const probe = (data.probes || []).find((x) => x.id === "stlink");
+        if (!probe || probe.presence !== "connected") {
+          setStlink("Not Connected");
+        } else {
+          setStlink(probe.detail || "Connected");
+        }
       })
       .catch(() => setStlink("Backend capability unavailable"));
   }, [mode]);
@@ -48,11 +51,19 @@ export function DevicePanel() {
 
   return (
     <div>
-      <div className="border-b border-border px-3 py-2 text-[11px] font-medium text-muted-foreground">Device</div>
+      <div className="border-b border-border px-3 py-2 text-[11px] font-medium text-muted-foreground">Device & Environment</div>
       <dl className="space-y-1.5 p-3 text-[12px]">
         <div className="flex justify-between">
+          <dt className="text-muted-foreground">Platform</dt>
+          <dd className="font-mono text-xs">
+            {ctx.mcu?.includes("ESP32") ? "ESP32-S3 (Experimental)" : "STM32F103 (Beta)"}
+          </dd>
+        </div>
+        <div className="flex justify-between">
           <dt className="text-muted-foreground">ST-Link</dt>
-          <dd className="font-mono">{mode === "live" ? stlink : "DEMO"}</dd>
+          <dd className={`font-mono text-xs ${stlink === "Not Connected" ? "text-amber-500" : ""}`}>
+            {mode === "live" ? stlink : "DEMO"}
+          </dd>
         </div>
         <div className="flex justify-between">
           <dt className="text-muted-foreground">MCU</dt>

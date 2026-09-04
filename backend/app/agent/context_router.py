@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from typing import Any, Iterable
 
@@ -19,6 +19,22 @@ CONTEXT_SKILL_LIMITS = {
 }
 
 
+def _infer_fact_origin(key: str) -> str:
+    if key in {"adapterId", "platform", "framework"}:
+        return "platform_detection"
+    if key in {"mcu", "core", "clockMHz", "flashKb", "ramKb", "flash_kb", "ram_kb"}:
+        return "mcu_profile"
+    if key in {"board", "led"}:
+        return "board_profile"
+    if key == "ioc":
+        return "ioc_analysis"
+    if key == "sdkconfig":
+        return "sdkconfig"
+    if key in {"Makefile", "CMakeLists"}:
+        return "build_definition"
+    return "project.json"
+
+
 @dataclass(frozen=True)
 class RoutedContext:
     context: dict[str, Any]
@@ -28,6 +44,7 @@ class RoutedContext:
     included_sources: tuple[str, ...]
     truncated_sources: tuple[str, ...]
     reasons: tuple[str, ...]
+    evidence_origins: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -39,6 +56,7 @@ class RoutedContext:
                 "includedSources": list(self.included_sources),
                 "truncatedSources": list(self.truncated_sources),
                 "reasons": list(self.reasons),
+                "evidenceOrigins": dict(self.evidence_origins),
             },
         }
 
@@ -123,7 +141,8 @@ class ContextRouter:
             if key in source:
                 routed[key] = source[key]
         used = _size(routed)
-        return RoutedContext(routed, selected_level, budget, used, tuple(included), tuple(truncated), tuple(reasons))
+        evidence_origins = {k: _infer_fact_origin(k) for k in facts}
+        return RoutedContext(routed, selected_level, budget, used, tuple(included), tuple(truncated), tuple(reasons), evidence_origins=evidence_origins)
 
 
 def route_context(context: dict[str, Any], *, level: ContextLevel | str = ContextLevel.PROJECT) -> dict[str, Any]:

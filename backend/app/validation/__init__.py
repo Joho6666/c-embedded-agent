@@ -85,20 +85,26 @@ def validate_project(root: Path, prompt: str = "") -> dict[str, Any]:
 
 
 def hardware_status(*, serial_lines: list[str] | None, expect: str | None, task: str, has_probe: bool) -> dict[str, Any]:
-    """Never fake PASS. Distinguish PASS/FAIL/PARTIAL/UNKNOWN/UNAVAILABLE."""
+    """Never fake PASS. Distinguish PASS/FAIL/PARTIAL/UNKNOWN/UNAVAILABLE/MANUAL_STEP_REQUIRED."""
     kind = (task or "").lower()
     joined = "\n".join(serial_lines or [])
+    if kind in {"exti", "button"} or "按键" in kind:
+        return {
+            "status": "MANUAL_STEP_REQUIRED",
+            "reason": "EXTI requires manual user button press; physical actuation cannot be automated without hardware test bench",
+            "observed": joined[:400],
+        }
     if kind in {"pwm"} and not has_probe:
-        return {"status": "PARTIAL", "reason": "no measurement device", "observed": joined[:400]}
+        return {"status": "PARTIAL", "reason": "no measurement device (oscilloscope/logic analyzer required)", "observed": joined[:400]}
     if kind in {"led", "gpio"} and not has_probe:
-        return {"status": "UNKNOWN", "reason": "static pass, hardware unverified", "hardware": "UNVERIFIED"}
+        return {"status": "PARTIAL", "reason": "firmware flashed, but optical sensor/probe required to verify LED blinking; cannot confirm physical light emission", "hardware": "PARTIAL"}
     if serial_lines is None and not has_probe:
         return {"status": "UNAVAILABLE", "reason": "Hardware Not Tested"}
     if not serial_lines:
         return {"status": "UNKNOWN", "reason": "no serial evidence"}
-    if kind.startswith("usart") or kind == "uart":
-        ok = "CEA:USART:PASS" in joined or (expect or "CEA:USART:PASS") in joined
-        return {"status": "PASS" if ok else "FAIL", "observed": joined[-800:]}
+    if kind.startswith("usart") or kind == "uart" or "serial" in kind:
+        ok = "CEA:STM32:PASS" in joined or "CEA:USART:PASS" in joined or (bool(expect) and expect in joined)
+        return {"status": "PASS" if ok else "FAIL", "observed": joined[-800:], "verdict": "VERIFIED_HARDWARE" if ok else "FAIL"}
     if kind.startswith("adc"):
         import re
 
@@ -107,11 +113,11 @@ def hardware_status(*, serial_lines: list[str] | None, expect: str | None, task:
             return {"status": "FAIL", "reason": "missing CEA:ADC:value", "observed": joined[-800:]}
         value = int(m.group(1))
         ok = 0 <= value <= 4095
-        return {"status": "PASS" if ok else "FAIL", "value": value, "observed": joined[-800:]}
+        return {"status": "PASS" if ok else "FAIL", "value": value, "observed": joined[-800:], "verdict": "VERIFIED_HARDWARE" if ok else "FAIL"}
     needle = (expect or "").strip()
     if needle:
         ok = needle.lower() in joined.lower()
-        return {"status": "PASS" if ok else "FAIL", "observed": joined[-800:]}
+        return {"status": "PASS" if ok else "FAIL", "observed": joined[-800:], "verdict": "VERIFIED_HARDWARE" if ok else "FAIL"}
     return {"status": "UNKNOWN", "reason": "no hardware rule", "observed": joined[-400:]}
 
 

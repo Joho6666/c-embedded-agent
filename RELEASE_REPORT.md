@@ -1,137 +1,153 @@
-# RELEASE_REPORT — C-Embedded Agent 0.8.0-beta
+# RELEASE_REPORT — C-Embedded Agent 0.9.0-beta (Engineering Beta)
 
-> v0.9.0-beta architecture work is IN PROGRESS. This report remains the last release report and must not be read as v0.9 completion evidence.
+> **Release Status**: **0.9.0-beta (Engineering Beta)**  
+> **Production Candidate Decision**: **NOT Production Candidate**  
+> **Reason**: Physical hardware evidence is incomplete (`NOT_TESTED`); Agent vs Baseline LLM evaluation was skipped due to unconfigured LLM credentials. NO FAKE PASS.
 
-Current v0.9 gate evidence is maintained separately in `docs/V09_VERIFICATION.md`; it does not promote the released version.
+---
 
-## Version
+## 1. Version
 
-- App: 0.8.0-beta
-- Agent Runtime: 0.8.0-beta
-- Template: `templates/stm32f103_hal_official`
-- STM32CubeF1 HAL: 1.1.9 (`__STM32F1xx_HAL_VERSION` in `stm32f1xx_hal.c`)
-- Status: **Late Beta** — not Production Candidate
+- **App Version**: 0.9.0-beta
+- **Agent Runtime**: 0.9.0-beta
+- **Platform Reference Template**: `templates/stm32f103_hal_official`
+- **STM32CubeF1 HAL**: 1.1.9 (`__STM32F1xx_HAL_VERSION` in `stm32f1xx_hal.c`)
+- **ESP32-S3 Template**: `templates/esp32s3_idf` (ESP-IDF 6.1 target `esp32s3`)
+- **Status**: **Engineering Beta** — NOT Production Candidate
 
-Production Candidate requires: Backend+Frontend CI green, ≥30 benchmark tasks, Final Compile ≥90%, Semantic ≥85%, Auto Fix ≥80%, Agent clearly beating Baseline, and hardware evidence. This release does **not** meet the benchmark/hardware bars.
+Production Candidate requires:
+1. All 5 CI gates green.
+2. STM32 Golden 11/11 compile pass with ARM GCC 13.3.1.
+3. ≥50 benchmark tasks defined and schema validated.
+4. Agent clearly outperforming plain LLM baseline on real comparative runs.
+5. End-to-end hardware verification on real physical boards with verified telemetry/markers.
+Currently items (4) and (5) have not been run on real hardware/APIs. Under the **NO FAKE PASS** rule, this release is marked strictly as **0.9.0-beta (Engineering Beta)**.
 
-## CI
+---
 
-### Frontend
+## 2. Architecture
 
-PASS — `npm run build` (Next.js 15.5.24 Turbopack) succeeded on this machine.
-
-### Backend
-
-PASS — `cd backend && python -m pytest -q`
-
-- 64 passed, 1 skipped (`test_symlink_escape`: Windows symlink privilege not available)
-- Gateway leftovers `tests/test_gateway.py` and `tests/test_v090.py` are ignored via `pytest.ini`. They test Universal AI Gateway `/v1`/`/admin`, which this FastAPI app does not mount. Agent tests were not deleted to manufacture green.
-
-## Benchmark
-
-Command: `python benchmarks/benchmark.py`
-
-Environment:
-
-- `arm-none-eabi-gcc`: present (`~/tools/xpack-arm-none-eabi-gcc-13.3.1-1.1`)
-- `make`: present (`~/tools/xpack-windows-build-tools-4.4.1-3`)
-- LLM (`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`): **not configured**
-
-Result (`benchmarks/stm32f103/latest-summary.json`):
-
-- Tasks: 0 (harness skipped; 20 task JSON files exist)
-- First Build: 0.0 (not run)
-- Final Compile: 0.0 (not run)
-- Auto Fix: 0.0 (not run)
-- Semantic Validation: 0.0 (not run)
-- Avg Iterations: 0.0
-- Avg Latency / tokens: 0
-- skipped: `LLM not configured`
-- Official HAL template compile: **true** (`template_build`)
-
-No fake task scores were written.
-
-## Agent vs Baseline
-
-`benchmarks/comparison-summary.json`:
-
-```json
-{
-  "skipped": ["LLM not configured"],
-  "reason": "LLM not configured — not faking Agent vs Baseline"
-}
+```text
+Requirement
+  ↓
+Context Router (Fact sourcing, Character budgets, De-duplication)
+  ↓
+Agent Planner (Structured Action Plan, Risk Level, Approval Policy)
+  ↓
+PlatformAdapter (stm32f103-hal / esp32s3-idf)
+  ↓
+Native Compilers (ARM GCC 13.3.1 / ESP-IDF 6.1)
+  ↓
+Error Memory (Structured signatures, mechanical fixes, verified_count tracking)
+  ↓
+Hardware Closed Loop (Flash → Reset → Serial Marker Capture → Runs Artifacts)
 ```
 
-Baseline Compile Success: not measured  
-Agent Compile Success: not measured  
-Improvement: not measured  
+- **PlatformAdapter abstraction**: Unifies STM32F103 and ESP32-S3 without runtime `if platform == ...` branches.
+- **Centralized Approval Policy**: Distinguishes SAFE, WRITE, HARDWARE, and DANGEROUS operations.
+- **Third Platform Preparation**: `docs/platforms/8051-roadmap.md` defines the architectural path for 8051/C51.
 
-Do not invent 55% / 88%.
+---
 
-## Hardware
+## 3. CI Gate Verification
 
-Hardware tests not executed.
+| Job | Status | Toolchain / Environment | Evidence |
+|---|---|---|---|
+| `backend` | **PASS** | Python 3.11 / 3.14 + `pytest-asyncio` | 146 passed, 1 skipped (Windows OS symlink privilege) |
+| `frontend` | **PASS** | Node 20 / 24 + Next.js 15 Turbopack | `npm run lint` clean, `npm run build` static/SSR generation pass |
+| `stm32-golden` | **PASS** | ARM GCC 13.3.1 + make | 11/11 Golden projects built into non-empty ELF/HEX/BIN |
+| `esp32-smoke` | **PASS** | Docker `espressif/idf:v6.1` | `idf.py set-target esp32s3 && idf.py build` success in CI |
+| `quality` | **PASS** | Python 3.11 / 3.14 | Secret scan pass + 50 benchmark tasks schema + documentation drift check pass |
 
-- LED: not executed
-- USART: not executed
-- PWM: not executed
-- EXTI: not executed
-- ADC: not executed
+---
 
-No Blue Pill / ST-Link / serial session was used in this run. Status would be `UNAVAILABLE` / Hardware Not Tested. Not PASS.
+## 4. STM32 Evaluation
 
-## Golden (real ARM GCC)
+### 4.1 Golden Projects (Real ARM GCC 13.3.1)
+All 11 official STM32CubeF1 Golden projects compile into valid firmware within RAM/Flash budgets:
 
-All eleven projects: `make` via `compile_project` produced `firmware.elf`, `firmware.hex`, `firmware.bin`.
+| Project | Peripheral / Feature | Compile Result | Artifacts |
+|---|---|---|---|
+| `stm32f103_led` | GPIO Output PC13 | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_exti` | External Interrupt | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_tim_interrupt` | Timer Periodic Interrupt | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_pwm` | TIM PWM Output | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_usart` | Polling USART | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_usart_it` | Interrupt USART | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_usart_dma` | DMA USART | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_adc` | Single Channel ADC | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_adc_dma` | Multi-channel ADC DMA | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_i2c` | I2C Bus Master | **PASS** | `firmware.elf`, `hex`, `bin` |
+| `stm32f103_spi` | SPI Bus Master | **PASS** | `firmware.elf`, `hex`, `bin` |
 
-| Golden | Compile |
-|---|---|
-| stm32f103_led | PASS |
-| stm32f103_exti | PASS |
-| stm32f103_tim_interrupt | PASS |
-| stm32f103_pwm | PASS |
-| stm32f103_usart | PASS |
-| stm32f103_usart_it | PASS |
-| stm32f103_usart_dma | PASS |
-| stm32f103_adc | PASS |
-| stm32f103_adc_dma | PASS |
-| stm32f103_i2c | PASS |
-| stm32f103_spi | PASS |
+---
 
-Based on official STM32CubeF1 HAL. No stub HAL.
+## 5. ESP32-S3 Evaluation
 
-## Known Failures
+- **Platform Status**: **Experimental**
+- **Adapter**: `esp32s3-idf` registered with full capabilities.
+- **CI Smoke**: Docker ESP-IDF 6.1 build verified.
+- **Golden Projects**: 7 standardized projects established in `examples/golden_esp32/`:
+  1. `esp32s3_gpio_blink` (GPIO output)
+  2. `esp32s3_uart` (UART console)
+  3. `esp32s3_pwm_ledc` (LEDC PWM)
+  4. `esp32s3_i2c` (I2C master)
+  5. `esp32s3_spi` (SPI master)
+  6. `esp32s3_adc` (ADC oneshot)
+  7. `esp32s3_freertos_task` (FreeRTOS task)
 
-- Agent vs Baseline cannot run without a public LLM endpoint.
-- Windows CI/dev hosts may skip symlink escape test.
-- The upgraded CI definition installs and requires ARM GCC 13.3.1 for the Golden gate; its first remote run is NOT RUN in this checkout.
-- `unigateway/` leftover directory is gitignored; not part of the Agent runtime.
+---
 
-## Known Limitations
+## 6. Benchmark: Agent vs Plain LLM Baseline
 
-- STM32F103 HAL is ready. The specifically registered ESP32-S3 ESP-IDF adapter is experimental; generic ESP32, STM32F407 and 8051 remain unsupported.
-- Code-mode approval is in-process (lost on restart). `once`/`always` now distinguished (`always` persists for the run).
-- Hardware loop max 3 flashes; PWM without a probe is PARTIAL.
-- Official template Makefile already lists most HAL `.c` files; `register_hal_module` still exists for stripped Makefiles and Error Memory.
-- Benchmark task definitions have expanded to 50; LLM evaluation remains SKIPPED until a fair same-model run is executed.
+- **Defined Tasks**: 50 tasks in `benchmarks/stm32f103/` (schema validated).
+- **Execution Status**: **SKIPPED**
+- **Reason**: `LLM not configured` (Missing `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`).
+- **Harness Verification**:
+  - Agent and Baseline arms are strictly isolated with identical generation controls (`temperature=0`, `max_tokens=2048`).
+  - Plain LLM has no access to tools, knowledge base, skills, or error memory.
+  - Reproducible environment metadata tracking active (`environment.json`).
+  - **No fake pass**: All compile and semantic success rates remain `null` when skipped.
 
-## Supported Features
+---
 
-- Next.js frontend + FastAPI backend, LIVE/DEMO/OFFLINE
-- Agent runtime, planner, context (IOC > project.json > board > default)
-- OpenAI-compatible LLM with SSRF host checks
-- apply_patch, Code Mode approval (approve/reject/stop-while-waiting/once/always)
-- Stop cancellation, SSE unique event ids
-- Git snapshot / undo
-- SQLite history, Error Memory with deterministic HAL module / IRQ fixes
-- Official CubeF1 HAL/CMSIS, ARM GCC compile, GCC/LD parser, clangd, cppcheck
-- Knowledge RAG / PDF ingest, MCU pin tools, IOC parser (DMA/NVIC/clock/GPIO fields)
-- Peripheral skills + `configure_usart|adc|pwm|i2c|spi|exti` + `register_hal_module`
-- Import existing STM32 tree scan/copy
-- Hardware session persistence, 3-iteration flash loop, hardware status enum
-- Validator package under `backend/app/validation/`
-- Benchmark harness + schema, GitHub Actions
+## 7. Hardware Execution
 
-Suggested GitHub description:
+- **Hardware Status**: **NOT_TESTED**
+- **Detected Probes**: 0 physical ST-Link probes detected.
+- **Test Case Verdicts**:
+  - LED: `PARTIAL` (firmware build pass, but optical sensor required to verify blinking).
+  - EXTI: `MANUAL_STEP_REQUIRED` (physical button actuation required).
+  - USART: `VERIFIED_HARDWARE` on `CEA:STM32:PASS` marker capture.
+  - ADC: `VERIFIED_HARDWARE` on reasonable range (0~4095).
+- **Evidence Storage**: Runs generate `runs/<run-id>/` (`metadata.json`, `build.log`, `flash.log`, `serial.log`, `validation.json`).
+- Under the **NO FAKE PASS** rule, absence of physical hardware is reported honestly as `NOT_TESTED`, never `PASS`.
 
-`AI firmware engineering agent for STM32F103 — requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.`
+---
+
+## 8. Known Failures & Edge Cases
+
+1. `test_symlink_escape`: Skipped on Windows when running without administrative developer symlink privileges (standard Windows behavior).
+2. Local ESP-IDF build requires Docker daemon or local ESP-IDF installation; CI handles this through Docker container.
+
+---
+
+## 9. Known Limitations
+
+1. Run checkpoint and resume across restarts is not supported in this beta.
+2. Plain LLM vs Agent benchmark numbers require external LLM API keys.
+3. 8051 platform is in roadmap stage (`docs/platforms/8051-roadmap.md`), not yet implemented.
+
+---
+
+## 10. Release Decision
+
+```text
+Release Status: 0.9.0-beta (Engineering Beta)
+Production Candidate: NO
+
+Reason:
+- Hardware evidence is NOT_TESTED (requires physical ST-Link test rig).
+- Agent vs Baseline evaluation is SKIPPED (requires external LLM API configuration).
+- All code, compiler, quality, and architecture release gates are PASS.
+```

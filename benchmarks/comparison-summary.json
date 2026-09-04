@@ -6,15 +6,28 @@
   "agentCompileSuccess": null,
   "baselineValidation": null,
   "agentValidation": null,
+  "improvementCompile": null,
+  "improvementValidation": null,
   "skipped": [
     "LLM not configured"
   ],
-  "reason": "LLM not configured \u2014 not faking scores",
+  "reason": "LLM not configured — not faking Agent vs Baseline",
   "environment": {
+    "gitCommitSha": "62634ef77cc45c2fa498863b43ccbc78224d695c",
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.6",
+    "node": "v24.14.1",
+    "armGccVersion": "arm-none-eabi-gcc (xPack GNU Arm Embedded GCC x86_64) 13.3.1 20240614",
+    "espIdfVersion": "not_installed",
+    "model": "",
+    "baseUrlHost": null,
     "temperature": 0,
-    "output_budget": 2048,
-    "runs_per_task": 1,
-    "python": "3.11.15"
+    "topP": 1.0,
+    "reasoningSetting": null,
+    "maxTokens": 2048,
+    "runsPerTask": 1,
+    "taskHash": "997dc89b9672c576",
+    "projectHash": "55d1abe73cdeaf79"
   },
   "evidence": []
 }

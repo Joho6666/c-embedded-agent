@@ -1,0 +1,58 @@
+{
+  "id": "esp32s3-uart",
+  "name": "ESP32-S3 UART",
+  "platform": "ESP32",
+  "platforms": [
+    "esp32s3-idf",
+    "esp32"
+  ],
+  "mcu": "ESP32-S3",
+  "framework": "ESP-IDF",
+  "description": "ESP32-S3 UART configuration using ESP-IDF driver/uart.h",
+  "triggers": [
+    "uart",
+    "usart",
+    "serial",
+    "串口",
+    "esp32s3 uart"
+  ],
+  "exclusions": [],
+  "capabilities": [
+    "TX",
+    "RX",
+    "Baudrate",
+    "FIFO"
+  ],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "validators": [
+    {
+      "id": "uart",
+      "label": "uart_driver_install and uart_param_config present"
+    }
+  ],
+  "golden_examples": [
+    {
+      "id": "esp32s3-uart",
+      "title": "ESP32-S3 UART Console",
+      "path": "examples/golden_esp32/esp32s3_uart"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "uart_param_config undeclared",
+      "hint": "Include driver/uart.h"
+    }
+  ],
+  "context_level": "FOCUSED",
+  "enabled": true,
+  "status": "ready",
+  "version": "0.9.0-beta"
+}

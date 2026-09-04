@@ -232,15 +232,33 @@ def ensure_schema() -> None:
               occurrences INTEGER DEFAULT 0,
               successful_runs INTEGER DEFAULT 0,
               failed_runs INTEGER DEFAULT 0,
-              last_seen TEXT
+              last_seen TEXT,
+              platform TEXT DEFAULT 'STM32',
+              error_signature TEXT,
+              confidence REAL DEFAULT 0.9,
+              verified_count INTEGER DEFAULT 0,
+              last_verified TEXT
             )"""
         )
+        # Migrate existing tables if columns missing
+        existing = {row[1] for row in con.execute("PRAGMA table_info(error_memories)").fetchall()}
+        if "platform" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN platform TEXT DEFAULT 'STM32'")
+        if "error_signature" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN error_signature TEXT")
+        if "confidence" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN confidence REAL DEFAULT 0.9")
+        if "verified_count" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN verified_count INTEGER DEFAULT 0")
+        if "last_verified" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN last_verified TEXT")
+
         for t in TEMPLATES:
             con.execute(
                 """INSERT OR IGNORE INTO error_memories
                    (id, pattern, mcu, family, framework, tag, root_cause, fix, strategy, files, knowledge,
-                    occurrences, successful_runs, failed_runs)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,0)""",
+                    occurrences, successful_runs, failed_runs, platform, error_signature, confidence, verified_count)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,0,?,?,0.9,0)""",
                 (
                     t["id"],
                     t["pattern"],
@@ -253,6 +271,8 @@ def ensure_schema() -> None:
                     json.dumps(t.get("strategy") or []),
                     json.dumps(t.get("files") or []),
                     json.dumps(t.get("knowledge") or []),
+                    "STM32",
+                    t["pattern"],
                 ),
             )
 
@@ -267,6 +287,8 @@ def _row(r: Any) -> dict[str, Any]:
     return {
         "id": r["id"],
         "pattern": r["pattern"],
+        "error_signature": r["error_signature"] or r["pattern"],
+        "platform": r["platform"] or "STM32",
         "mcu": r["mcu"],
         "family": r["family"],
         "framework": r["framework"],
@@ -276,6 +298,9 @@ def _row(r: Any) -> dict[str, Any]:
         "strategy": json.loads(r["strategy"] or "[]"),
         "files": json.loads(r["files"] or "[]"),
         "knowledge": json.loads(r["knowledge"] or "[]"),
+        "confidence": float(r["confidence"] if r["confidence"] is not None else 0.9),
+        "verified_count": int(r["verified_count"] or 0),
+        "last_verified": r["last_verified"],
         "occurrences": occ,
         "successRate": rate,
         "successfulRuns": ok,
@@ -353,13 +378,21 @@ def mark_fix_result(eid: str, *, success: bool) -> None:
     with connect() as con:
         if success:
             con.execute(
-                """UPDATE error_memories SET occurrences=occurrences+1, successful_runs=successful_runs+1, last_seen=?
+                """UPDATE error_memories
+                   SET occurrences=occurrences+1,
+                       successful_runs=successful_runs+1,
+                       verified_count=verified_count+1,
+                       last_verified=?,
+                       last_seen=?
                    WHERE id=?""",
-                (now(), eid),
+                (now(), now(), eid),
             )
         else:
             con.execute(
-                """UPDATE error_memories SET occurrences=occurrences+1, failed_runs=failed_runs+1, last_seen=?
+                """UPDATE error_memories
+                   SET occurrences=occurrences+1,
+                       failed_runs=failed_runs+1,
+                       last_seen=?
                    WHERE id=?""",
                 (now(), eid),
             )

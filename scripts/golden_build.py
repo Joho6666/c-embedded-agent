@@ -25,6 +25,14 @@ def _memory_ok(size_exe: str, project: Path) -> bool:
 
 
 def main() -> int:
+    import sys
+    sys.path.insert(0, str(ROOT / "backend"))
+    try:
+        from app.tools.toolchain import prepend_toolchain_path
+        prepend_toolchain_path()
+    except Exception:
+        pass
+
     gcc = shutil.which("arm-none-eabi-gcc")
     make = shutil.which("make")
     size_exe = shutil.which("arm-none-eabi-size")

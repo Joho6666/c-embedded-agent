@@ -74,7 +74,7 @@ def collect_state() -> dict:
     ci_jobs = []
     if ci_file.is_file():
         ci_text = ci_file.read_text(encoding="utf-8")
-        for job in ("backend", "frontend", "stm32-golden", "esp32-smoke", "esp32-golden", "8051-golden", "quality"):
+        for job in ("backend", "frontend", "stm32-golden", "esp32-smoke", "esp32-golden", "mcu8051-golden", "quality"):
             if f"  {job}:" in ci_text:
                 ci_jobs.append(job)
 

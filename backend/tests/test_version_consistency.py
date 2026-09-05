@@ -67,5 +67,5 @@ def test_golden_counts_consistency() -> None:
     assert state["esp32_golden_count"] == 7
     assert state["mcu8051_golden_count"] == 4
     assert state["benchmark_task_count"] == 50
-    assert "8051-golden" in state["ci_jobs"]
+    assert "mcu8051-golden" in state["ci_jobs"]
     assert len(ps.check_documentation_drift(state)) == 0

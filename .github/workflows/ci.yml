@@ -90,7 +90,8 @@ jobs:
           espressif/idf:v6.1
           bash -lc "cd /project/examples/golden_esp32/${{ matrix.project }} && idf.py set-target esp32s3 && idf.py build"
 
-  8051-golden:
+  mcu8051-golden:
+    name: 8051-golden
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

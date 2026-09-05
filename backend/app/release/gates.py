@@ -184,9 +184,9 @@ def check_8051_golden(repo_root: Path | None = None) -> GateResult:
         return GateResult(name="8051_golden", passed=False, status="FAIL", reasons=[f"Expected >=3 8051 golden projects, found {len(projects)}"])
     ci_file = root / ".github" / "workflows" / "ci.yml"
     ci_text = ci_file.read_text(encoding="utf-8") if ci_file.is_file() else ""
-    ci_configured = "8051-golden" in ci_text
+    ci_configured = "8051-golden" in ci_text or "mcu8051-golden" in ci_text
     if not ci_configured:
-        return GateResult(name="8051_golden", passed=False, status="FAIL", reasons=["8051-golden job missing in .github/workflows/ci.yml"])
+        return GateResult(name="8051_golden", passed=False, status="FAIL", reasons=["mcu8051-golden job missing in .github/workflows/ci.yml"])
     return GateResult(
         name="8051_golden",
         passed=True,

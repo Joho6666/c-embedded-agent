@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.mcu.stm32f103 import MCU
+from app.agent.context_router import ContextRouter
+from app.agent.task_classifier import TaskClassifier
+from app.config.settings import settings
+from app.platforms.registry import default_registry
 from app.tools.filesystem import list_files
 from app.tools.ioc import parse_ioc
 from app.tools.skills import match_skills, skill_summary
@@ -28,16 +31,14 @@ def load_ioc_analysis(root: Path) -> dict[str, Any] | None:
 
 def led_from_ioc(ioc: dict[str, Any] | None) -> str:
     if not ioc:
-        return "PC13"
+        return ""
     for p in ioc.get("pins") or []:
         sig = str(p.get("signal") or "")
         label = str(p.get("mode") or "")
         pin = str(p.get("pin") or "")
-        if pin.upper() == "PC13" or "LED" in sig.upper() or "LED" in label.upper():
-            return pin or "PC13"
-        if sig == "GPIO_Output" and pin.upper().startswith("PC"):
+        if "LED" in sig.upper() or "LED" in label.upper():
             return pin
-    return "PC13"
+    return ""
 
 
 def build_context(
@@ -46,17 +47,30 @@ def build_context(
     iteration: int,
     errors: list[dict[str, Any]] | None = None,
     knowledge: list[dict[str, Any]] | None = None,
-    board: str = "Blue Pill",
+    board: str | None = None,
     prompt: str = "",
     extra_skills: list[dict[str, Any]] | None = None,
+    platform_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     files = []
     try:
         files = list_files(root)
     except OSError:
         files = []
-    core = [f for f in files if f.startswith("Core/") and f.endswith((".c", ".h"))]
-    ioc = load_ioc_analysis(root)
+    core = [
+        f for f in files
+        if f.endswith((".c", ".h")) and not f.startswith(("Drivers/", "Middlewares/", "build/"))
+    ]
+    if platform_context is None:
+        registry = default_registry(settings.repo_root)
+        resolution = registry.detect(root)
+        if resolution.adapter is None:
+            cached_ioc = load_ioc_analysis(root) or {}
+            if cached_ioc.get("mcu"):
+                resolution = registry.resolve_explicit(mcu=str(cached_ioc["mcu"]))
+        platform_context = resolution.adapter.load_context(root) if resolution.adapter else {}
+    facts = dict(platform_context.get("facts") or {})
+    ioc = platform_context.get("ioc") or load_ioc_analysis(root)
     project_cfg: dict[str, Any] = {}
     pj = root / "project.json"
     if pj.is_file():
@@ -64,32 +78,35 @@ def build_context(
             project_cfg = json.loads(pj.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             project_cfg = {}
-    led = led_from_ioc(ioc) if ioc else (project_cfg.get("led") or "PC13")
-    skills = [skill_summary(s) for s in match_skills(prompt)]
+    led = led_from_ioc(ioc) or facts.get("led") or project_cfg.get("led")
+    classification = TaskClassifier().classify(prompt, platform=facts.get("adapterId") or facts.get("platform"))
+    skills = [skill_summary(s) for s in match_skills(prompt, context_level=classification.context_level)]
     for s in extra_skills or []:
         sid = s.get("id")
         if sid and sid not in {x.get("id") for x in skills}:
             skills.append(skill_summary(s) if "capabilities" in s else s)
     # IOC > Project Config > Board Profile > Default
-    mcu = (ioc or {}).get("mcu") or project_cfg.get("mcu") or MCU["name"]
-    board_name = (ioc or {}).get("board") or project_cfg.get("board") or board
+    mcu = (ioc or {}).get("mcu") or project_cfg.get("mcu") or facts.get("mcu")
+    board_name = (ioc or {}).get("board") or project_cfg.get("board") or board or facts.get("board")
     clock = (ioc or {}).get("clock") or {}
     pins = (ioc or {}).get("pins") or []
     pin_brief = [f"{p.get('pin')}={p.get('signal')}" for p in pins[:16]]
-    return {
+    legacy_context = {
         "mcu": mcu,
-        "core": MCU["core"],
-        "flash_kb": MCU["flash_kb"],
-        "ram_kb": MCU["ram_kb"],
-        "framework": "HAL",
-        "compiler": "arm-none-eabi-gcc",
+        "adapterId": facts.get("adapterId"),
+        "platform": facts.get("platform"),
+        "core": facts.get("core"),
+        "flash_kb": facts.get("flashKb") or facts.get("flash_kb"),
+        "ram_kb": facts.get("ramKb") or facts.get("ram_kb"),
+        "framework": project_cfg.get("framework") or facts.get("framework"),
+        "compiler": project_cfg.get("toolchain") or facts.get("toolchain"),
         "board": board_name,
         "led": led,
         "iteration": iteration,
-        "project_tree": files[:80],
-        "relevant_files": core[:24],
-        "errors": (errors or [])[:12],
-        "knowledge": (knowledge or [])[:4],
+        "project_tree": files,
+        "relevant_files": core,
+        "errors": errors or [],
+        "knowledge": knowledge or [],
         "ioc": {
             "filename": (ioc or {}).get("filename"),
             "clockMhz": int((clock.get("sysclkHz") or 0) / 1_000_000) if clock.get("sysclkHz") else None,
@@ -104,12 +121,24 @@ def build_context(
         "project": {
             "id": project_cfg.get("id"),
             "name": project_cfg.get("name"),
-            "framework": project_cfg.get("framework") or "HAL",
+            "framework": project_cfg.get("framework") or facts.get("framework"),
         }
         if project_cfg
         else None,
         "priority": "IOC > Project Config > Board Profile > Default",
     }
+    routed = ContextRouter().route(legacy_context, level=classification.context_level)
+    compact = dict(routed.context.pop("platform_facts", {}))
+    compact.update(routed.context)
+    compact["_routing"] = {
+        "contextLevel": routed.level.value,
+        "budget": routed.budget,
+        "usedChars": routed.used_chars,
+        "includedSources": list(routed.included_sources),
+        "truncatedSources": list(routed.truncated_sources),
+        "reasons": list(routed.reasons),
+    }
+    return compact
 
 
 def context_prompt(ctx: dict[str, Any]) -> str:

@@ -1,0 +1,116 @@
+{
+  "id": "usart",
+  "name": "USART",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "USART1",
+    "USART2",
+    "USART3"
+  ],
+  "supportedTasks": [
+    "usart_tx",
+    "uart_printf",
+    "adc_uart"
+  ],
+  "pins": [
+    {
+      "pin": "PA9",
+      "signal": "USART1_TX"
+    },
+    {
+      "pin": "PA10",
+      "signal": "USART1_RX"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_USART1_CLK_ENABLE",
+    "__HAL_RCC_GPIOA_CLK_ENABLE"
+  ],
+  "halModules": [
+    "UART"
+  ],
+  "sourceFiles": [
+    "Core/Src/usart.c",
+    "Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c"
+  ],
+  "headers": [
+    "Core/Inc/usart.h"
+  ],
+  "irq": [],
+  "dma": [],
+  "initOrder": [
+    "MX_GPIO_Init",
+    "MX_USART1_UART_Init"
+  ],
+  "capabilities": [
+    "UART TX",
+    "UART RX",
+    "Interrupt"
+  ],
+  "knowledgeCollections": [
+    "HAL UART",
+    "RM0008 USART"
+  ],
+  "knowledge": [
+    "HAL UART"
+  ],
+  "goldenExamples": [
+    {
+      "id": "usart-tx",
+      "title": "USART TX",
+      "path": "examples/golden/stm32f103_usart"
+    }
+  ],
+  "validators": [
+    {
+      "id": "init",
+      "label": "HAL_UART_Init present"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to HAL_UART_Init",
+      "hint": "register_hal_module UART"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 USART implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "usart",
+    "uart",
+    "串口"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "usart-tx",
+      "title": "USART TX",
+      "path": "examples/golden/stm32f103_usart"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to HAL_UART_Init",
+      "hint": "register_hal_module UART"
+    }
+  ]
+}

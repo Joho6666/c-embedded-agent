@@ -1,0 +1,106 @@
+{
+  "id": "tim",
+  "name": "TIM",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "TIM1",
+    "TIM2",
+    "TIM3",
+    "TIM4"
+  ],
+  "supportedTasks": [
+    "tim_basic",
+    "tim_irq"
+  ],
+  "pins": [],
+  "clocks": [
+    "__HAL_RCC_TIM3_CLK_ENABLE"
+  ],
+  "halModules": [
+    "TIM"
+  ],
+  "sourceFiles": [
+    "Core/Src/tim.c"
+  ],
+  "headers": [
+    "Core/Inc/tim.h"
+  ],
+  "irq": [
+    "TIM3_IRQn"
+  ],
+  "dma": [],
+  "initOrder": [
+    "MX_TIM3_Init",
+    "HAL_TIM_Base_Start_IT"
+  ],
+  "capabilities": [
+    "Base timer",
+    "Interrupt",
+    "PWM"
+  ],
+  "knowledgeCollections": [
+    "HAL TIM"
+  ],
+  "knowledge": [
+    "HAL TIM"
+  ],
+  "goldenExamples": [
+    {
+      "id": "tim-base",
+      "title": "TIM3 IRQ",
+      "path": "examples/golden/stm32f103_tim_interrupt"
+    }
+  ],
+  "validators": [
+    {
+      "id": "init",
+      "label": "HAL_TIM_Base_Init present"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to HAL_TIM_Base_Init",
+      "hint": "register_hal_module TIM"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 TIM implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "tim",
+    "timer",
+    "定时器"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "tim-base",
+      "title": "TIM3 IRQ",
+      "path": "examples/golden/stm32f103_tim_interrupt"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to HAL_TIM_Base_Init",
+      "hint": "register_hal_module TIM"
+    }
+  ]
+}

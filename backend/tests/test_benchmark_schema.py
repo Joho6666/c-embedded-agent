@@ -23,12 +23,12 @@ def test_benchmark_schema_skip_file_if_present() -> None:
         sample = {
             "model": "",
             "tasks": 0,
-            "firstBuildSuccess": 0.0,
-            "finalCompileSuccess": 0.0,
-            "autoFixSuccess": 0.0,
-            "semanticValidation": 0.0,
-            "avgIterations": 0.0,
-            "avgLatency": 0.0,
+            "firstBuildSuccess": None,
+            "finalCompileSuccess": None,
+            "autoFixSuccess": None,
+            "semanticValidation": None,
+            "avgIterations": None,
+            "avgLatency": None,
             "inputTokens": 0,
             "outputTokens": 0,
             "skipped": ["not run"],
@@ -37,11 +37,14 @@ def test_benchmark_schema_skip_file_if_present() -> None:
         return
     data = json.loads(path.read_text(encoding="utf-8"))
     assert REQUIRED.issubset(data.keys())
-    if data.get("skipped"):
-        assert data.get("finalCompileSuccess", 0) in {0, 0.0} or True
+    if data.get("status") == "SKIPPED":
+        assert data.get("skipped")
+        for key in ("firstBuildSuccess", "finalCompileSuccess", "autoFixSuccess", "semanticValidation"):
+            assert data[key] is None
+        return
     for key in ("firstBuildSuccess", "finalCompileSuccess", "autoFixSuccess", "semanticValidation"):
         assert isinstance(data[key], (int, float))
-        assert 0.0 <= float(data[key]) <= 1.0 or data.get("skipped")
+        assert 0.0 <= float(data[key]) <= 1.0
 
 
 def test_comparison_schema_optional() -> None:
@@ -52,3 +55,7 @@ def test_comparison_schema_optional() -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
     assert "baselineCompileSuccess" in data or "skipped" in data
     assert "agentCompileSuccess" in data or "skipped" in data
+    if data.get("status") == "SKIPPED":
+        assert data.get("skipped")
+        assert data.get("baselineCompileSuccess") is None
+        assert data.get("agentCompileSuccess") is None

@@ -5,6 +5,7 @@ export * from "./patch";
 export * from "./hardware";
 export * from "./validation";
 export * from "./project";
+export * from "./platform";
 export * from "./mcu";
 export * from "./knowledge";
 export * from "./tools";

@@ -232,15 +232,39 @@ def ensure_schema() -> None:
               occurrences INTEGER DEFAULT 0,
               successful_runs INTEGER DEFAULT 0,
               failed_runs INTEGER DEFAULT 0,
-              last_seen TEXT
+              last_seen TEXT,
+              platform TEXT DEFAULT 'STM32',
+              error_signature TEXT,
+              confidence REAL DEFAULT 0.9,
+              verified_count INTEGER DEFAULT 0,
+              last_verified TEXT
             )"""
         )
+        # Migrate existing tables if columns missing
+        existing = {row[1] for row in con.execute("PRAGMA table_info(error_memories)").fetchall()}
+        if "platform" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN platform TEXT DEFAULT 'STM32'")
+        if "error_signature" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN error_signature TEXT")
+        if "confidence" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN confidence REAL DEFAULT 0.9")
+        if "verified_count" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN verified_count INTEGER DEFAULT 0")
+        if "last_verified" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN last_verified TEXT")
+        if "success_count" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN success_count INTEGER DEFAULT 0")
+        if "failure_count" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN failure_count INTEGER DEFAULT 0")
+        if "last_success_sha" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN last_success_sha TEXT")
+
         for t in TEMPLATES:
             con.execute(
                 """INSERT OR IGNORE INTO error_memories
                    (id, pattern, mcu, family, framework, tag, root_cause, fix, strategy, files, knowledge,
-                    occurrences, successful_runs, failed_runs)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,0)""",
+                    occurrences, successful_runs, failed_runs, platform, error_signature, confidence, verified_count)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,0,?,?,0.9,0)""",
                 (
                     t["id"],
                     t["pattern"],
@@ -253,6 +277,8 @@ def ensure_schema() -> None:
                     json.dumps(t.get("strategy") or []),
                     json.dumps(t.get("files") or []),
                     json.dumps(t.get("knowledge") or []),
+                    "STM32",
+                    t["pattern"],
                 ),
             )
 
@@ -267,6 +293,8 @@ def _row(r: Any) -> dict[str, Any]:
     return {
         "id": r["id"],
         "pattern": r["pattern"],
+        "error_signature": r["error_signature"] or r["pattern"],
+        "platform": r["platform"] or "STM32",
         "mcu": r["mcu"],
         "family": r["family"],
         "framework": r["framework"],
@@ -276,6 +304,12 @@ def _row(r: Any) -> dict[str, Any]:
         "strategy": json.loads(r["strategy"] or "[]"),
         "files": json.loads(r["files"] or "[]"),
         "knowledge": json.loads(r["knowledge"] or "[]"),
+        "confidence": float(r["confidence"] if r["confidence"] is not None else 0.9),
+        "verified_count": int(r["verified_count"] or 0),
+        "last_verified": r["last_verified"],
+        "success_count": int(r["success_count"] if "success_count" in r.keys() and r["success_count"] is not None else r["successful_runs"] or 0),
+        "failure_count": int(r["failure_count"] if "failure_count" in r.keys() and r["failure_count"] is not None else r["failed_runs"] or 0),
+        "last_success_sha": r["last_success_sha"] if "last_success_sha" in r.keys() and r["last_success_sha"] is not None else "",
         "occurrences": occ,
         "successRate": rate,
         "successfulRuns": ok,
@@ -348,21 +382,46 @@ def record_from_output(output: str, *, success: bool) -> list[str]:
     return hits
 
 
-def mark_fix_result(eid: str, *, success: bool) -> None:
+def mark_fix_result(
+    eid: str,
+    *,
+    success: bool = True,
+    compile_success: bool = True,
+    validator_pass: bool = True,
+    git_sha: str | None = None,
+) -> None:
     ensure_schema()
+    full_pass = bool(success and compile_success and validator_pass)
     with connect() as con:
-        if success:
+        if full_pass:
             con.execute(
-                """UPDATE error_memories SET occurrences=occurrences+1, successful_runs=successful_runs+1, last_seen=?
+                """UPDATE error_memories
+                   SET occurrences=occurrences+1,
+                       successful_runs=successful_runs+1,
+                       success_count=success_count+1,
+                       verified_count=verified_count+1,
+                       last_verified=?,
+                       last_seen=?,
+                       last_success_sha=?
                    WHERE id=?""",
-                (now(), eid),
+                (now(), now(), git_sha or "", eid),
             )
         else:
             con.execute(
-                """UPDATE error_memories SET occurrences=occurrences+1, failed_runs=failed_runs+1, last_seen=?
+                """UPDATE error_memories
+                   SET occurrences=occurrences+1,
+                       failed_runs=failed_runs+1,
+                       failure_count=failure_count+1,
+                       last_seen=?
                    WHERE id=?""",
                 (now(), eid),
             )
+        row = con.execute("SELECT success_count, failure_count FROM error_memories WHERE id=?", (eid,)).fetchone()
+        if row:
+            s_cnt = int(row[0] or 0)
+            f_cnt = int(row[1] or 0)
+            conf = round((s_cnt + 1) / (s_cnt + f_cnt + 2), 4)
+            con.execute("UPDATE error_memories SET confidence=? WHERE id=?", (conf, eid))
 
 
 def apply_known_fix(root: Path, error_id: str) -> dict[str, Any]:

@@ -14,6 +14,8 @@ import { useWorkspaceUI } from "./workspace-store";
 import { useHardware } from "./hardware-store";
 import { DEMO_PROMPT } from "@/lib/mock/files";
 import { useProject } from "./project-store";
+import { createProject } from "@/lib/api/project";
+import type { CreateProjectInput } from "@/types/platform";
 
 interface AgentState {
   prompt: string;
@@ -29,8 +31,8 @@ interface AgentState {
   unsubscribe?: () => void;
   setPrompt: (v: string) => void;
   setMode: (m: AgentMode) => void;
-  startGoldenPath: () => Promise<void>;
-  startRun: () => Promise<void>;
+  startGoldenPath: (project?: CreateProjectInput) => Promise<void>;
+  startRun: (project?: CreateProjectInput) => Promise<void>;
   stopRun: () => Promise<void>;
   approve: (decision: ApprovalDecision, approvalId?: string) => Promise<void>;
 }
@@ -125,11 +127,11 @@ export const useAgent = create<AgentState>()(
       setPrompt: (v) => set({ prompt: v }),
       setMode: (m) => set({ mode: m }),
 
-      startGoldenPath: async () => {
-        await get().startRun();
+      startGoldenPath: async (project) => {
+        await get().startRun(project);
       },
 
-      startRun: async () => {
+      startRun: async (project) => {
         get().unsubscribe?.();
         const { useLive } = await import("./live-store");
         await useLive.getState().refresh();
@@ -142,11 +144,15 @@ export const useAgent = create<AgentState>()(
         if (live) {
           try {
             const { API_BASE } = await import("@/lib/api/client");
-            const created = await fetch(`${API_BASE}/api/projects`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name: "STM32 LED", mcu: "STM32F103C8T6", framework: "HAL" }),
-            }).then((r) => r.json()) as { id?: string };
+            const created = await createProject(project ?? {
+              name: "STM32 LED",
+              platform: "STM32",
+              mcu: "STM32F103C8T6",
+              framework: "HAL",
+              toolchain: "ARM GCC",
+              board: "Blue Pill",
+              adapterId: "stm32f103-hal",
+            });
             if (created.id) {
               projectId = created.id;
               useProject.getState().setProjectId(created.id);

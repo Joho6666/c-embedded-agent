@@ -15,6 +15,8 @@
  * Serial / Debug later: WebSocket /ws/serial /ws/debug
  */
 export const API_ROUTES = {
+  platforms: "/api/platforms",
+  projects: "/api/projects",
   runs: "/api/runs",
   run: (id: string) => `/api/runs/${id}`,
   stop: (id: string) => `/api/runs/${id}/stop`,
@@ -23,6 +25,8 @@ export const API_ROUTES = {
   importIoc: "/api/projects/import-ioc",
   analyzeIoc: "/api/projects/analyze-ioc",
   projectIoc: (id: string) => `/api/projects/${id}/ioc`,
+  scanExisting: "/api/projects/scan-existing",
+  importExisting: "/api/projects/import-existing",
   hardwareRun: "/api/hardware/run",
   autoDebug: "/api/hardware/auto-debug",
   skills: "/api/skills",

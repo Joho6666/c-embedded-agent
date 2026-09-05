@@ -18,6 +18,87 @@ from app.tools.validate import inspect_usart, validate_led_task
 from app.validation import hardware_status, validate_project
 
 
+def _get_git_sha(repo_root: Path) -> str:
+    try:
+        import subprocess
+
+        proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_root, capture_output=True, text=True, timeout=5, check=False)
+        return proc.stdout.strip() if proc.returncode == 0 else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def save_hardware_run_artifact(
+    root: Path,
+    run_id: str,
+    *,
+    platform_name: str = "STM32",
+    mcu: str = "STM32F103C8T6",
+    board: str = "Blue Pill",
+    adapter: str = "stm32f103-hal",
+    device: str | None = None,
+    toolchain: str = "ARM_GCC",
+    build_log: str = "",
+    flash_log: str = "",
+    serial_log: str = "",
+    validation_data: dict[str, Any] | None = None,
+) -> Path:
+    from datetime import datetime, timezone
+    import hashlib
+    import json
+    from app.config.settings import settings
+
+    repo_root = getattr(settings, "repo_root", root)
+    runs_dir = repo_root / "runs" / run_id
+    runs_dir.mkdir(parents=True, exist_ok=True)
+
+    elf_path = root / "firmware.elf"
+    elf_sha = ""
+    if elf_path.is_file():
+        try:
+            elf_sha = hashlib.sha256(elf_path.read_bytes()).hexdigest()
+        except OSError:
+            elf_sha = ""
+
+    metadata = {
+        "runId": run_id,
+        "platform": platform_name,
+        "mcu": mcu,
+        "board": board,
+        "adapter": adapter,
+        "firmwareArtifact": "firmware.elf" if elf_path.is_file() else None,
+        "firmwareSha256": elf_sha or None,
+        "toolchain": toolchain,
+        "device": device,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "gitSha": _get_git_sha(repo_root),
+    }
+
+    (runs_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    if build_log:
+        (runs_dir / "build.log").write_text(build_log, encoding="utf-8")
+    if flash_log:
+        (runs_dir / "flash.log").write_text(flash_log, encoding="utf-8")
+    if serial_log:
+        (runs_dir / "serial.log").write_text(serial_log, encoding="utf-8")
+    if validation_data:
+        (runs_dir / "validation.json").write_text(json.dumps(validation_data, indent=2), encoding="utf-8")
+
+    val_status = (validation_data or {}).get("status", "UNKNOWN")
+    summary = {
+        "runId": run_id,
+        "platform": platform_name,
+        "mcu": mcu,
+        "status": val_status,
+        "hasBuild": bool(build_log),
+        "hasFlash": bool(flash_log),
+        "hasSerial": bool(serial_log),
+        "validated": bool(val_status in {"PASS", "VERIFIED_HARDWARE"}),
+    }
+    (runs_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return runs_dir
+
+
 def _step(kind: str, title: str, status: str, detail: str = "", logs: str = "", reason: str = "") -> dict[str, Any]:
     return {
         "id": f"{kind}-{uuid.uuid4().hex[:6]}",
@@ -52,6 +133,26 @@ def run_pipeline(
             task=task,
             attempt=attempt + 1,
         )
+        hw_run_id = last.get("runId")
+        if hw_run_id:
+            from app.agent.checkpoint import RunCheckpoint, save_run_checkpoint
+            from app.config.settings import settings
+            save_run_checkpoint(
+                RunCheckpoint(
+                    run_id=hw_run_id,
+                    project_id=str(root.name),
+                    prompt=task,
+                    mode="hardware",
+                    status="running" if attempt + 1 < 3 else "completed",
+                    phase="hardware_loop",
+                    hardware_attempt=attempt + 1,
+                    last_errors=last.get("steps") or [],
+                    serial_device=serial_device,
+                    serial_baud=baud,
+                    expect=expect,
+                ),
+                getattr(settings, "repo_root", root),
+            )
         val = (last.get("validation") or {}).get("status")
         if val in {"PASS", "pass", "PARTIAL", "UNKNOWN", "UNAVAILABLE"}:
             last["hardwareIterations"] = attempt + 1
@@ -80,6 +181,7 @@ def _run_pipeline_once(
     task: str = "",
     attempt: int = 1,
 ) -> dict[str, Any]:
+    run_id = f"hw-{uuid.uuid4().hex[:8]}"
     steps: list[dict[str, Any]] = []
 
     try:
@@ -87,7 +189,9 @@ def _run_pipeline_once(
     except CompileError as e:
         steps.append(_step("build", "Build", "failed", str(e), reason=str(e)))
         record_from_output(str(e), success=False)
-        return {"available": True, "runId": f"hw-{uuid.uuid4().hex[:8]}", "steps": steps}
+        val = _unknown_val()
+        save_hardware_run_artifact(root, run_id, build_log=str(e), validation_data=val)
+        return {"available": True, "runId": run_id, "steps": steps, "validation": val}
 
     mem = build.get("memory") or {}
     flash_kb = mem.get("text") or mem.get("flash") or 0
@@ -105,7 +209,9 @@ def _run_pipeline_once(
     )
     record_from_output(logs, success=ok)
     if not ok:
-        return {"available": True, "runId": f"hw-{uuid.uuid4().hex[:8]}", "steps": steps, "validation": _unknown_val()}
+        val = _unknown_val()
+        save_hardware_run_artifact(root, run_id, build_log=logs, validation_data=val)
+        return {"available": True, "runId": run_id, "steps": steps, "validation": val}
 
     chip = detect_chip_id()
     if not chip.get("available"):
@@ -114,28 +220,36 @@ def _run_pipeline_once(
         steps.append(_step("reset", "Reset", "unavailable", reason="skipped"))
         steps.append(_step("serial", "Serial", "unavailable", reason="skipped"))
         steps.append(_step("validate", "Validation", "unavailable", reason="no hardware evidence"))
-        return {"available": True, "runId": f"hw-{uuid.uuid4().hex[:8]}", "steps": steps, "validation": _unknown_val()}
+        val = _unknown_val()
+        save_hardware_run_artifact(root, run_id, build_log=logs, validation_data=val)
+        return {"available": True, "runId": run_id, "steps": steps, "validation": val}
 
     family = chip.get("family") or "unknown"
     steps.append(_step("detect", "ST-Link", "success" if family == "STM32F1" else "failed", f"{family} detected", str(chip.get("output") or "")[-1500:]))
 
+    flash_output = ""
     try:
         flashed = flash_elf(root)
         f_ok = bool(flashed.get("success"))
-        steps.append(_step("flash", "Flash", "success" if f_ok else "failed", "Verified" if f_ok else "flash failed", str(flashed.get("output") or "")[-2000:]))
+        flash_output = str(flashed.get("output") or "")
+        steps.append(_step("flash", "Flash", "success" if f_ok else "failed", "Verified" if f_ok else "flash failed", flash_output[-2000:]))
         if f_ok:
             steps.append(_step("reset", "Reset", "success", "verify reset exit"))
         else:
             steps.append(_step("reset", "Reset", "failed", "flash did not reset"))
             steps.append(_step("serial", "Serial", "unavailable", reason="flash failed"))
             steps.append(_step("validate", "Validation", "unavailable", reason="flash failed"))
-            return {"available": True, "runId": f"hw-{uuid.uuid4().hex[:8]}", "steps": steps, "validation": _unknown_val()}
+            val = _unknown_val()
+            save_hardware_run_artifact(root, run_id, build_log=logs, flash_log=flash_output, validation_data=val)
+            return {"available": True, "runId": run_id, "steps": steps, "validation": val}
     except FlashError as e:
         steps.append(_step("flash", "Flash", "failed", str(e), reason=str(e)))
         steps.append(_step("reset", "Reset", "unavailable", reason=str(e)))
         steps.append(_step("serial", "Serial", "unavailable", reason=str(e)))
         steps.append(_step("validate", "Validation", "unavailable", reason=str(e)))
-        return {"available": True, "runId": f"hw-{uuid.uuid4().hex[:8]}", "steps": steps, "validation": _unknown_val()}
+        val = _unknown_val()
+        save_hardware_run_artifact(root, run_id, build_log=logs, flash_log=str(e), validation_data=val)
+        return {"available": True, "runId": run_id, "steps": steps, "validation": val}
 
     serial_lines: list[str] = []
     if serial_device:
@@ -187,13 +301,15 @@ def _run_pipeline_once(
     status = hw.get("status") or "UNKNOWN"
     expected = expect or hw.get("reason") or ""
     actual = hw.get("observed") or hw.get("reason") or ""
-    conf = 0.9 if status == "PASS" else None
+    conf = 0.9 if status in {"PASS", "VERIFIED_HARDWARE"} else None
     step_status = {
         "PASS": "success",
+        "VERIFIED_HARDWARE": "success",
         "FAIL": "failed",
         "PARTIAL": "failed",
         "UNKNOWN": "unavailable",
         "UNAVAILABLE": "unavailable",
+        "MANUAL_STEP_REQUIRED": "waiting_manual",
     }.get(status, "unavailable")
     steps.append(
         _step(
@@ -202,22 +318,34 @@ def _run_pipeline_once(
             step_status,
             f"{status} static={static.get('score')} semantic={semantic.get('score')}",
             json_safe({"static": static, "semantic": semantic, "hardware": hw}),
-            reason="" if status == "PASS" else str(hw.get("reason") or status),
+            reason="" if status in {"PASS", "VERIFIED_HARDWARE"} else str(hw.get("reason") or status),
         )
+    )
+    val_data = {
+        "expected": expected,
+        "actual": actual,
+        "status": status,
+        "confidence": conf,
+        "semantic": semantic,
+    }
+    art_dir = save_hardware_run_artifact(
+        root,
+        run_id,
+        device=serial_device,
+        build_log=logs,
+        flash_log=flash_output,
+        serial_log="\n".join(serial_lines),
+        validation_data=val_data,
     )
     return {
         "available": True,
-        "runId": f"hw-{uuid.uuid4().hex[:8]}",
+        "runId": run_id,
+        "artifactPath": str(art_dir),
         "attempt": attempt,
         "steps": steps,
-        "validation": {
-            "expected": expected,
-            "actual": actual,
-            "status": status,
-            "confidence": conf,
-            "semantic": semantic,
-        },
+        "validation": val_data,
     }
+
 
 
 def json_safe(obj: Any) -> str:

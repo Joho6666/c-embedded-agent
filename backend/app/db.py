@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS model_calls (
   latency_ms INTEGER,
   tool_calls INTEGER
 );
+CREATE TABLE IF NOT EXISTS run_checkpoints (
+  run_id TEXT PRIMARY KEY,
+  project_id TEXT,
+  checkpoint_data TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
   title, body, source, section, page, mcu, kind,
   tokenize = 'porter'
@@ -182,3 +189,26 @@ def load_run(run_id: str) -> dict[str, Any] | None:
         data = dict(row)
         data["events"] = [json.loads(e["payload"]) for e in events]
         return data
+
+
+def save_checkpoint_db(run_id: str, project_id: str, checkpoint_data: dict[str, Any]) -> None:
+    with connect() as con:
+        t = now()
+        con.execute(
+            """INSERT INTO run_checkpoints(run_id, project_id, checkpoint_data, created_at, updated_at)
+               VALUES(?, ?, ?, ?, ?)
+               ON CONFLICT(run_id) DO UPDATE SET checkpoint_data=excluded.checkpoint_data, updated_at=excluded.updated_at""",
+            (run_id, project_id, json.dumps(checkpoint_data, ensure_ascii=False), t, t),
+        )
+
+
+def load_checkpoint_db(run_id: str) -> dict[str, Any] | None:
+    with connect() as con:
+        row = con.execute("SELECT checkpoint_data FROM run_checkpoints WHERE run_id=?", (run_id,)).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row["checkpoint_data"])
+        except Exception:
+            return None
+

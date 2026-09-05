@@ -1,24 +1,29 @@
 # C-Embedded Agent
 
-AI firmware engineering agent for STM32F103 — requirement → code → ARM GCC build → auto-fix → ST-Link flash → serial validation.
+AI firmware engineering agent for embedded C.
 
-Version: **0.8.0-beta** (Late Beta). Not a Production Candidate: Agent vs Baseline was not executed (no LLM configured on this machine).
+```text
+Requirement
+→ Understand Project
+→ Generate/Patch
+→ Build
+→ Diagnose
+→ Auto Fix
+→ Flash
+→ Hardware Validate
+```
 
-The evaluation question is not “how many pages were added?”. It is:
-
-- On the same STM32F103 task, how often does a plain LLM compile?
-- How often does C-Embedded Agent compile and pass semantic validation?
+Version: **0.9.1-beta** (Engineering Beta). Not a Production Candidate: Physical hardware testing is incomplete, and Agent vs Baseline evaluation was skipped without LLM credentials. See `PROJECT_STATE.md` and `RELEASE_REPORT.md`.
 
 ## Support Matrix
 
-| Platform | Build | Agent | Flash | Hardware Validate |
-|---|---|---|---|---|
-| STM32F103 HAL | ✅ | Beta | Beta | Beta |
-| STM32F407 | ❌ | ❌ | ❌ | ❌ |
-| ESP32 | ❌ | ❌ | ❌ | ❌ |
-| 8051 | ❌ | ❌ | ❌ | ❌ |
+| Platform | Framework | Status |
+|---|---|---|
+| STM32F103 | CubeF1 HAL | Beta (Compile Verified) |
+| ESP32-S3 | ESP-IDF | Beta (Compile Verified) |
+| 8051 | SDCC | Experimental (Compile Verified) |
 
-Do not claim ESP32 / 8051 / F407 are available.
+Do not claim generic STM32F4 / RP2040 / nRF52 / Arduino / Zephyr are available. Only `stm32f103-hal` (Beta), `esp32s3-idf` (Beta), and `8051-sdcc` (Experimental) are registered in the runtime.
 
 ## Modes
 
@@ -58,7 +63,7 @@ cd templates/stm32f103_hal_official
 make clean && make -j4
 ```
 
-Needs `arm-none-eabi-gcc` / `objcopy` / `size` / `make`. Tests skip when the toolchain is absent — they do not invent scores.
+Needs `arm-none-eabi-gcc` / `objcopy` / `size` / `make`. Local characterization tests may skip when the toolchain is absent; the CI Golden gate requires ARM GCC 13.3.1 and fails if it is unavailable.
 
 Portable toolchain autodetection:
 
@@ -117,7 +122,11 @@ Writes:
 - `benchmarks/stm32f103/latest-summary.json` (commit this)
 - `benchmarks/comparison-summary.json` (Agent vs Baseline)
 
-This checkout: ARM GCC present, **LLM not configured**. Summary records skip reasons and zeros. Template itself compiled (`template_build: true`). No fake Agent vs Baseline percentages.
+The suite contains 50 versioned task definitions with platform, category, fixture, oracle, requirements, environment and evidence fields. This checkout still has **no recorded LLM run**: summaries explicitly say `SKIPPED`, and no Agent-vs-Baseline percentages are inferred from zeros.
+
+## Development gates
+
+Run `python scripts/pre_finish.py` for secret scanning, repository invariants and backend tests. CI separately runs frontend, backend, exact-toolchain STM32 Golden, conditional ESP-IDF 6.1 smoke, and quality jobs. Hardware operations are never run in CI.
 
 ## Tests / CI
 

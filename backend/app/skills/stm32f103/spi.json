@@ -1,0 +1,111 @@
+{
+  "id": "spi",
+  "name": "SPI",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "SPI1",
+    "SPI2"
+  ],
+  "supportedTasks": [
+    "spi"
+  ],
+  "pins": [
+    {
+      "pin": "PA5",
+      "signal": "SPI1_SCK"
+    },
+    {
+      "pin": "PA6",
+      "signal": "SPI1_MISO"
+    },
+    {
+      "pin": "PA7",
+      "signal": "SPI1_MOSI"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_SPI1_CLK_ENABLE",
+    "__HAL_RCC_GPIOA_CLK_ENABLE"
+  ],
+  "halModules": [
+    "SPI"
+  ],
+  "sourceFiles": [
+    "Core/Src/spi.c"
+  ],
+  "headers": [
+    "Core/Inc/spi.h"
+  ],
+  "irq": [],
+  "dma": [],
+  "initOrder": [
+    "MX_SPI1_Init"
+  ],
+  "capabilities": [
+    "Master",
+    "Full duplex"
+  ],
+  "knowledgeCollections": [
+    "HAL SPI"
+  ],
+  "knowledge": [
+    "HAL SPI"
+  ],
+  "goldenExamples": [
+    {
+      "id": "spi-tx",
+      "title": "SPI master",
+      "path": "examples/golden/stm32f103_spi"
+    }
+  ],
+  "validators": [
+    {
+      "id": "init",
+      "label": "HAL_SPI_Init present"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to HAL_SPI_Init",
+      "hint": "register_hal_module SPI"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 SPI implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "spi"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "spi-tx",
+      "title": "SPI master",
+      "path": "examples/golden/stm32f103_spi"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to HAL_SPI_Init",
+      "hint": "register_hal_module SPI"
+    }
+  ]
+}

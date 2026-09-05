@@ -1,0 +1,113 @@
+{
+  "id": "exti",
+  "name": "EXTI",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "EXTI",
+    "GPIO"
+  ],
+  "supportedTasks": [
+    "exti"
+  ],
+  "pins": [
+    {
+      "pin": "PA0",
+      "signal": "EXTI0",
+      "mode": "GPIO_MODE_IT_FALLING",
+      "pull": "PULLUP"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_GPIOA_CLK_ENABLE",
+    "__HAL_RCC_AFIO_CLK_ENABLE"
+  ],
+  "halModules": [
+    "GPIO",
+    "EXTI"
+  ],
+  "sourceFiles": [
+    "Core/Src/gpio.c",
+    "Core/Src/stm32f1xx_it.c"
+  ],
+  "headers": [
+    "Core/Inc/gpio.h"
+  ],
+  "irq": [
+    "EXTI0_IRQn"
+  ],
+  "dma": [],
+  "initOrder": [
+    "MX_GPIO_Init",
+    "HAL_NVIC_EnableIRQ"
+  ],
+  "capabilities": [
+    "Rising",
+    "Falling",
+    "IRQ"
+  ],
+  "knowledgeCollections": [
+    "RM0008 EXTI",
+    "HAL GPIO EXTI"
+  ],
+  "knowledge": [
+    "RM0008 EXTI"
+  ],
+  "goldenExamples": [
+    {
+      "id": "exti-btn",
+      "title": "EXTI IRQ",
+      "path": "examples/golden/stm32f103_exti"
+    }
+  ],
+  "validators": [
+    {
+      "id": "nvic",
+      "label": "NVIC EXTI enabled"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to EXTI0_IRQHandler",
+      "hint": "add EXTI0_IRQHandler"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 EXTI implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "exti",
+    "外部中断"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "exti-btn",
+      "title": "EXTI IRQ",
+      "path": "examples/golden/stm32f103_exti"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to EXTI0_IRQHandler",
+      "hint": "add EXTI0_IRQHandler"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "id": "freertos",
+  "name": "FreeRTOS",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "SYS"
+  ],
+  "supportedTasks": [],
+  "pins": [],
+  "clocks": [],
+  "halModules": [],
+  "sourceFiles": [],
+  "headers": [],
+  "irq": [],
+  "dma": [],
+  "initOrder": [],
+  "capabilities": [
+    "Tasks",
+    "Queues",
+    "Delay"
+  ],
+  "knowledgeCollections": [
+    "CMSIS-RTOS",
+    "FreeRTOS"
+  ],
+  "knowledge": [
+    "FreeRTOS"
+  ],
+  "goldenExamples": [
+    {
+      "id": "rtos-task",
+      "title": "FreeRTOS task",
+      "summary": "not supported this release"
+    }
+  ],
+  "validators": [
+    {
+      "id": "cmsis",
+      "label": "cmsis_os / FreeRTOS included"
+    }
+  ],
+  "knownErrors": [],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": false,
+  "status": "not-supported",
+  "description": "STM32F103 FreeRTOS implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "freertos",
+    "rtos"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "rtos-task",
+      "title": "FreeRTOS task",
+      "summary": "not supported this release"
+    }
+  ],
+  "known_errors": []
+}

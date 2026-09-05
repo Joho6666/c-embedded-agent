@@ -1,0 +1,1 @@
+{"id":"49","prompt":"进入 Sleep 模式并由 PA0 EXTI 唤醒。","platform":"stm32f103-hal","category":"system","fixture":"stm32f103_hal_official","oracle":{"must_compile":true,"expected_files":["Core/Src/main.c"]},"requirements":{"toolchain":"arm-none-eabi-gcc-13.3.1","hardware":false},"environment":{"framework":"HAL","sdk":"STM32CubeF1-1.1.9"},"evidence":["build","static-validation"]}

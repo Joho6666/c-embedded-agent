@@ -1,1 +1,1 @@
-{"id":"02","prompt":"配置 PA0 为上拉输入，并在 main 循环读取。","expected_files":["Core/Src/gpio.c"],"must_compile":true}
+{"id":"02","prompt":"配置 PA0 为上拉输入，并在 main 循环读取。","expected_files":["Core/Src/gpio.c"],"must_compile":true,"platform":"stm32f103-hal","category":"gpio","fixture":"stm32f103_hal_official","oracle":{"must_compile":true,"expected_files":["Core/Src/gpio.c"]},"requirements":{"toolchain":"arm-none-eabi-gcc-13.3.1","hardware":false},"environment":{"framework":"HAL","sdk":"STM32CubeF1-1.1.9"},"evidence":["build","static-validation"]}

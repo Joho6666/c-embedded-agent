@@ -1,0 +1,7 @@
+board: ESP32-S3-DevKitC-1
+mcu: ESP32-S3
+framework: ESP-IDF
+idf_version: "6.1"
+gpio_output: GPIO4
+uart: UART0
+serial_marker: CEA:ESP32:PASS

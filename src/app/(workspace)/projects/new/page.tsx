@@ -1,20 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { mcuCatalog } from "@/lib/mock/hardware";
 import { useHardware } from "@/lib/stores/hardware-store";
 import { useAgent } from "@/lib/stores/agent-store";
 import { useProject } from "@/lib/stores/project-store";
 import { cn } from "@/lib/utils";
 import type { PlatformId } from "@/types/project";
-import { analyzeIoc, importIoc, importExistingProject } from "@/lib/api/ioc";
+import { analyzeIoc, importIoc, importExistingProject, scanExistingProject } from "@/lib/api/ioc";
 import { CapabilityBanner } from "@/components/common/CapabilityBanner";
 import type { IocAnalysis } from "@/types/ioc";
 import { useLive } from "@/lib/stores/live-store";
+import { listPlatforms } from "@/lib/api/platforms";
+import type { PlatformCapability } from "@/types/platform";
 
-const platforms: PlatformId[] = ["STM32", "ESP32", "8051", "AVR", "RP2040", "Linux"];
 type CreateMode = "new" | "ioc" | "existing";
 
 function applyIocToHardware(analysis: IocAnalysis, setContext: (c: Record<string, unknown>) => void, setIoc: (a: IocAnalysis) => void) {
@@ -64,6 +64,14 @@ export default function NewProjectPage() {
   const [preview, setPreview] = useState<IocAnalysis | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [platforms, setPlatforms] = useState<PlatformCapability[]>([]);
+  const [existingPath, setExistingPath] = useState("");
+  const selectedAdapter = useMemo(() => platforms.find((p) => p.platform === platform), [platforms, platform]);
+
+  useEffect(() => {
+    if (modeLive !== "live") return;
+    void listPlatforms().then(setPlatforms);
+  }, [modeLive]);
 
   const onPickIoc = async (file: File | undefined) => {
     if (!file) return;
@@ -103,7 +111,7 @@ export default function NewProjectPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-6">
-      <div className="text-[11px] text-muted-foreground">创建 STM32 项目</div>
+      <div className="text-[11px] text-muted-foreground">创建嵌入式项目</div>
       <h1 className="text-[18px] font-semibold">创建嵌入式工程</h1>
       <div className="mt-4 grid grid-cols-3 gap-2">
         {(
@@ -162,17 +170,14 @@ export default function NewProjectPage() {
 
       {mode === "existing" && (
         <div className="mt-5 space-y-3">
-          <p className="text-[12px] text-muted-foreground">ZIP / 已有 STM32 工程目录导入本轮尚未实现。</p>
-          <CapabilityBanner reason="Backend Not Implemented" />
-          <Button
-            variant="outline"
-            onClick={() => {
-              void importExistingProject().then((r) => setErr(r.reason ?? "Backend Not Implemented"));
-            }}
-          >
-            选择工程
-          </Button>
+          <p className="text-[12px] text-muted-foreground">输入后端主机可访问的工程目录绝对路径。导入前可先扫描，不会修改源目录。</p>
+          <input className="w-full rounded-sm border border-border bg-background px-3 py-2 font-mono text-[12px]" value={existingPath} onChange={(e) => setExistingPath(e.target.value)} placeholder="C:\\firmware\\my-project" />
+          <div className="flex gap-2">
+            <Button variant="outline" disabled={!existingPath || busy || modeLive !== "live"} onClick={async () => { setBusy(true); setErr(null); const r = await scanExistingProject(existingPath); setErr(r.available ? `扫描完成：${String(r.platform ?? r.mcu ?? "已识别工程")}` : r.reason ?? "扫描失败"); setBusy(false); }}>扫描工程</Button>
+            <Button disabled={!existingPath || busy || modeLive !== "live"} onClick={async () => { setBusy(true); setErr(null); const r = await importExistingProject(existingPath); if (r.available && r.id) { setProjectId(r.id); router.push("/agent"); } else setErr(r.reason ?? "导入失败"); setBusy(false); }}>导入已有工程</Button>
+          </div>
           {err && <CapabilityBanner reason={err} />}
+          {modeLive !== "live" && <p className="text-[11px] text-muted-foreground">导入需要 LIVE 后端。</p>}
         </div>
       )}
 
@@ -186,26 +191,25 @@ export default function NewProjectPage() {
           </p>
           {step === 1 && (
             <div className="mt-4 grid grid-cols-3 gap-2">
-              {platforms.map((p) => (
-                <button key={p} type="button" onClick={() => setPlatform(p)} className={cn("rounded-sm border px-3 py-4", platform === p ? "border-primary bg-accent" : "border-border")}>
-                  {p}
+              {(platforms.length ? platforms : [{ id: "stm32f103-hal", name: "STM32F103 HAL", platform: "STM32", status: "ready" as const, mcus: ["STM32F103C8T6"], boards: ["bluepill_f103c8"], frameworks: ["HAL"], toolchains: ["ARM_GCC"], capabilities: ["create"] }, ...["ESP32", "8051", "AVR", "RP2040", "Linux"].map((p) => ({ id: p, name: p, platform: p, status: "unsupported" as const, mcus: [], boards: [], frameworks: [], toolchains: [], capabilities: [] }))]).map((p) => (
+                <button key={p.id} type="button" disabled={p.status === "unsupported"} title={p.status === "unsupported" ? "后端尚未注册该平台" : undefined} onClick={() => { setPlatform(p.platform as PlatformId); setMcu(p.mcus?.[0] ?? ""); setFramework(p.frameworks?.[0] ?? ""); setToolchain(p.toolchains?.[0] ?? ""); }} className={cn("rounded-sm border px-3 py-4", platform === p.platform ? "border-primary bg-accent" : "border-border", p.status === "unsupported" && "cursor-not-allowed opacity-45")}>
+                  {p.platform}<span className="ml-1 text-[10px] text-muted-foreground">{p.status}</span>
                 </button>
               ))}
             </div>
           )}
           {step === 2 && (
             <div className="mt-4 space-y-1">
-              {mcuCatalog.map((m) => (
-                <button key={m.id} type="button" onClick={() => setMcu(m.name)} className={cn("flex w-full justify-between rounded-sm border px-3 py-2", mcu === m.name ? "border-primary bg-accent" : "border-border")}>
-                  <span className="font-mono">{m.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{m.core}</span>
+              {(selectedAdapter?.mcus ?? []).map((name) => (
+                <button key={name} type="button" onClick={() => setMcu(name)} className={cn("flex w-full justify-between rounded-sm border px-3 py-2", mcu === name ? "border-primary bg-accent" : "border-border")}>
+                  <span className="font-mono">{name}</span>
                 </button>
               ))}
             </div>
           )}
           {step === 3 && (
             <div className="mt-4 grid grid-cols-2 gap-2">
-              {["HAL", "LL", "CMSIS", "Bare Metal"].map((f) => (
+              {(selectedAdapter?.frameworks ?? []).map((f) => (
                 <button key={f} type="button" onClick={() => setFramework(f)} className={cn("rounded-sm border px-3 py-3", framework === f ? "border-primary bg-accent" : "border-border")}>
                   {f === "Bare Metal" ? "裸机" : f}
                 </button>
@@ -214,7 +218,7 @@ export default function NewProjectPage() {
           )}
           {step === 4 && (
             <div className="mt-4 grid grid-cols-2 gap-2">
-              {["ARM GCC", "Keil", "PlatformIO"].map((t) => (
+              {(selectedAdapter?.toolchains ?? []).map((t) => (
                 <button key={t} type="button" onClick={() => setToolchain(t)} className={cn("rounded-sm border px-3 py-3", toolchain === t ? "border-primary bg-accent" : "border-border")}>
                   {t}
                 </button>
@@ -229,9 +233,9 @@ export default function NewProjectPage() {
               <Button onClick={() => setStep((s) => s + 1)}>下一步</Button>
             ) : (
               <Button
-                onClick={() => {
+                onClick={async () => {
                   setContext({ platform, mcu, framework, buildTool: toolchain });
-                  void start();
+                  await start({ name: `${mcu} Project`, platform, mcu, framework, toolchain, board: selectedAdapter?.boards[0], adapterId: selectedAdapter?.id });
                   router.push("/agent");
                 }}
               >

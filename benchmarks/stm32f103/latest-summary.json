@@ -1,17 +1,38 @@
 {
+  "status": "SKIPPED",
   "model": "",
   "tasks": 0,
-  "firstBuildSuccess": 0.0,
-  "finalCompileSuccess": 0.0,
-  "autoFixSuccess": 0.0,
-  "semanticValidation": 0.0,
-  "avgIterations": 0.0,
-  "avgLatency": 0.0,
+  "firstBuildSuccess": null,
+  "finalCompileSuccess": null,
+  "autoFixSuccess": null,
+  "semanticValidation": null,
+  "avgIterations": null,
+  "avgLatency": null,
   "inputTokens": 0,
   "outputTokens": 0,
+  "estimatedCost": 0.0,
   "gcc": true,
   "llm": false,
   "skipped": [
     "LLM not configured"
-  ]
+  ],
+  "reason": "LLM not configured",
+  "environment": {
+    "gitCommitSha": "33f2d1044d1ac50dc6a09c5f4857e56a857aea9b",
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.6",
+    "node": "v24.14.1",
+    "armGccVersion": "arm-none-eabi-gcc (xPack GNU Arm Embedded GCC x86_64) 13.3.1 20240614",
+    "espIdfVersion": "not_installed",
+    "model": "",
+    "baseUrlHost": null,
+    "temperature": 0,
+    "topP": 1.0,
+    "reasoningSetting": null,
+    "maxTokens": 2048,
+    "runsPerTask": 1,
+    "taskHash": "50d3d79a57d51378",
+    "projectHash": "55d1abe73cdeaf79"
+  },
+  "evidence": []
 }

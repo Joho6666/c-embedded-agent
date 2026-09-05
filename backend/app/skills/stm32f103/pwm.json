@@ -1,0 +1,109 @@
+{
+  "id": "pwm",
+  "name": "PWM",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "TIM2",
+    "TIM3",
+    "TIM4"
+  ],
+  "supportedTasks": [
+    "pwm",
+    "pwm_servo"
+  ],
+  "pins": [
+    {
+      "pin": "PA0",
+      "signal": "TIM2_CH1",
+      "mode": "GPIO_MODE_AF_PP"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_TIM2_CLK_ENABLE",
+    "__HAL_RCC_GPIOA_CLK_ENABLE"
+  ],
+  "halModules": [
+    "TIM"
+  ],
+  "sourceFiles": [
+    "Core/Src/tim.c"
+  ],
+  "headers": [
+    "Core/Inc/tim.h"
+  ],
+  "irq": [],
+  "dma": [],
+  "initOrder": [
+    "MX_TIM2_Init",
+    "HAL_TIM_PWM_Start"
+  ],
+  "capabilities": [
+    "PWM output",
+    "Duty cycle"
+  ],
+  "knowledgeCollections": [
+    "HAL TIM PWM"
+  ],
+  "knowledge": [
+    "HAL TIM PWM"
+  ],
+  "goldenExamples": [
+    {
+      "id": "pwm-pa0",
+      "title": "TIM2 CH1 PWM",
+      "path": "examples/golden/stm32f103_pwm"
+    }
+  ],
+  "validators": [
+    {
+      "id": "pwm",
+      "label": "HAL_TIM_PWM_Init present"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to HAL_TIM_PWM_Init",
+      "hint": "register_hal_module TIM"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 PWM implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "pwm",
+    "servo",
+    "舵机"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "pwm-pa0",
+      "title": "TIM2 CH1 PWM",
+      "path": "examples/golden/stm32f103_pwm"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to HAL_TIM_PWM_Init",
+      "hint": "register_hal_module TIM"
+    }
+  ]
+}

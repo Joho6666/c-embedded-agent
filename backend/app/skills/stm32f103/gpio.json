@@ -1,0 +1,115 @@
+{
+  "id": "gpio",
+  "name": "GPIO",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "GPIO"
+  ],
+  "supportedTasks": [
+    "led",
+    "gpio_input",
+    "button_led"
+  ],
+  "pins": [
+    {
+      "pin": "PC13",
+      "signal": "LED",
+      "mode": "GPIO_Output"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_GPIOC_CLK_ENABLE"
+  ],
+  "halModules": [
+    "GPIO"
+  ],
+  "sourceFiles": [
+    "Core/Src/gpio.c"
+  ],
+  "headers": [
+    "Core/Inc/gpio.h"
+  ],
+  "irq": [],
+  "dma": [],
+  "initOrder": [
+    "MX_GPIO_Init"
+  ],
+  "capabilities": [
+    "Output",
+    "Input",
+    "Toggle",
+    "Open Drain"
+  ],
+  "knowledgeCollections": [
+    "HAL GPIO",
+    "RM0008 GPIO"
+  ],
+  "knowledge": [
+    "HAL GPIO",
+    "RM0008 GPIO"
+  ],
+  "goldenExamples": [
+    {
+      "id": "gpio-led",
+      "title": "PC13 LED Toggle",
+      "path": "examples/golden/stm32f103_led"
+    }
+  ],
+  "validators": [
+    {
+      "id": "clk",
+      "label": "GPIOx clock enabled"
+    },
+    {
+      "id": "init",
+      "label": "HAL_GPIO_Init present"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "GPIO_PIN_x undeclared",
+      "hint": "Pin macro missing or wrong header"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 GPIO implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "gpio",
+    "led",
+    "blink",
+    "闪"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "gpio-led",
+      "title": "PC13 LED Toggle",
+      "path": "examples/golden/stm32f103_led"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "GPIO_PIN_x undeclared",
+      "hint": "Pin macro missing or wrong header"
+    }
+  ]
+}

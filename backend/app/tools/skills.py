@@ -1,57 +1,31 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 from app.config.settings import settings
-
-
-def _path() -> Path:
-    p = Path(__file__).resolve().parent.parent / "skills" / "stm32f103.json"
-    return p
+from app.agent.skill_router import SkillRouter
+from app.agent.task_classifier import ContextLevel
+from app.skills.registry import default_skill_registry
 
 
 def list_skills() -> list[dict[str, Any]]:
-    path = _path()
-    if not path.is_file():
-        return []
-    return json.loads(path.read_text(encoding="utf-8"))
+    return [skill.to_dict() for skill in default_skill_registry().list(include_disabled=True)]
 
 
 def get_skill(sid: str) -> dict[str, Any] | None:
-    for s in list_skills():
-        if s.get("id") == sid:
-            return s
-    return None
+    skill = default_skill_registry().get(sid, include_disabled=True)
+    return skill.to_dict() if skill else None
 
 
-_SKILL_KEYS: list[tuple[str, tuple[str, ...]]] = [
-    ("usart-dma", ("usart dma", "uart dma", "dma uart")),
-    ("usart", ("usart", "uart", "串口")),
-    ("pwm", ("pwm",)),
-    ("tim", ("tim2", "tim3", "定时器", "timer")),
-    ("adc-dma", ("adc dma",)),
-    ("adc", ("adc",)),
-    ("i2c", ("i2c", "eeprom")),
-    ("spi", ("spi",)),
-    ("exti", ("exti", "中断")),
-    ("gpio", ("led", "gpio", "blink", "闪")),
-    ("freertos", ("freertos", "rtos")),
-]
-
-
-def match_skills(prompt: str) -> list[dict[str, Any]]:
-    p = prompt.lower()
-    out: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for sid, keys in _SKILL_KEYS:
-        if any(k in p for k in keys) and sid not in seen:
-            item = get_skill(sid)
-            if item:
-                out.append(item)
-                seen.add(sid)
-    return out
+def match_skills(
+    prompt: str,
+    *,
+    platform: str = "stm32f103",
+    context_level: ContextLevel | str = ContextLevel.DEEP,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    selection = SkillRouter().select(prompt, platform=platform, context_level=context_level, limit=limit)
+    return [skill.to_dict() for skill in selection.skills]
 
 
 def skill_summary(skill: dict[str, Any]) -> dict[str, Any]:
@@ -66,9 +40,9 @@ def skill_summary(skill: dict[str, Any]) -> dict[str, Any]:
         "irq": skill.get("irq") or [],
         "dma": skill.get("dma") or [],
         "initOrder": skill.get("initOrder") or [],
-        "validators": [v.get("label") for v in (skill.get("validators") or [])],
-        "knownErrors": [e.get("pattern") for e in (skill.get("knownErrors") or [])],
-        "goldenExamples": [g.get("title") or g.get("path") for g in (skill.get("goldenExamples") or [])],
+        "validators": [v.get("label") if isinstance(v, dict) else str(v) for v in (skill.get("validators") or [])],
+        "knownErrors": [e.get("pattern") if isinstance(e, dict) else str(e) for e in (skill.get("knownErrors") or skill.get("known_errors") or [])],
+        "goldenExamples": [g.get("title") or g.get("path") if isinstance(g, dict) else str(g) for g in (skill.get("goldenExamples") or skill.get("golden_examples") or [])],
         "knowledge": skill.get("knowledge") or skill.get("knowledgeCollections") or [],
     }
 

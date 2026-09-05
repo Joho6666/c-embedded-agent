@@ -1,0 +1,109 @@
+{
+  "id": "i2c",
+  "name": "I2C",
+  "platform": "STM32",
+  "mcuFamilies": [
+    "STM32F1"
+  ],
+  "peripherals": [
+    "I2C1",
+    "I2C2"
+  ],
+  "supportedTasks": [
+    "i2c_scan",
+    "eeprom_i2c"
+  ],
+  "pins": [
+    {
+      "pin": "PB6",
+      "signal": "I2C1_SCL"
+    },
+    {
+      "pin": "PB7",
+      "signal": "I2C1_SDA"
+    }
+  ],
+  "clocks": [
+    "__HAL_RCC_I2C1_CLK_ENABLE",
+    "__HAL_RCC_GPIOB_CLK_ENABLE"
+  ],
+  "halModules": [
+    "I2C"
+  ],
+  "sourceFiles": [
+    "Core/Src/i2c.c"
+  ],
+  "headers": [
+    "Core/Inc/i2c.h"
+  ],
+  "irq": [],
+  "dma": [],
+  "initOrder": [
+    "MX_I2C1_Init"
+  ],
+  "capabilities": [
+    "Master TX",
+    "Master RX"
+  ],
+  "knowledgeCollections": [
+    "HAL I2C"
+  ],
+  "knowledge": [
+    "HAL I2C"
+  ],
+  "goldenExamples": [
+    {
+      "id": "i2c-scan",
+      "title": "I2C master",
+      "path": "examples/golden/stm32f103_i2c"
+    }
+  ],
+  "validators": [
+    {
+      "id": "init",
+      "label": "HAL_I2C_Init present"
+    }
+  ],
+  "knownErrors": [
+    {
+      "pattern": "undefined reference to HAL_I2C_Init",
+      "hint": "register_hal_module I2C"
+    }
+  ],
+  "benchmarkScore": null,
+  "version": "0.8.0-beta",
+  "enabled": true,
+  "status": "ready",
+  "description": "STM32F103 I2C implementation guidance",
+  "platforms": [
+    "stm32f103"
+  ],
+  "triggers": [
+    "i2c",
+    "eeprom"
+  ],
+  "exclusions": [],
+  "required_tools": [
+    "read_file",
+    "apply_patch",
+    "compile_project"
+  ],
+  "required_context": [
+    "platform_facts",
+    "relevant_files"
+  ],
+  "context_level": "FOCUSED",
+  "golden_examples": [
+    {
+      "id": "i2c-scan",
+      "title": "I2C master",
+      "path": "examples/golden/stm32f103_i2c"
+    }
+  ],
+  "known_errors": [
+    {
+      "pattern": "undefined reference to HAL_I2C_Init",
+      "hint": "register_hal_module I2C"
+    }
+  ]
+}

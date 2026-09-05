@@ -46,6 +46,27 @@ export async function getProjectIoc(projectId: string): Promise<IocImportResult>
   }
 }
 
-export async function importExistingProject(): Promise<IocImportResult> {
-  return { available: false, reason: "Backend Not Implemented" };
+export interface ExistingProjectResult {
+  available: boolean;
+  reason?: string;
+  id?: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+export async function scanExistingProject(path: string): Promise<ExistingProjectResult> {
+  try {
+    return { available: true, ...(await apiFetch<Record<string, unknown>>("/api/projects/scan-existing", { method: "POST", body: JSON.stringify({ path }) })) };
+  } catch (e) {
+    return { available: false, reason: e instanceof Error ? e.message : "Backend capability unavailable" };
+  }
+}
+
+export async function importExistingProject(path: string, name?: string): Promise<ExistingProjectResult> {
+  try {
+    const data = await apiFetch<Record<string, unknown>>("/api/projects/import-existing", { method: "POST", body: JSON.stringify({ path, name }) });
+    return { available: true, ...data, id: String(data.id ?? data.projectId ?? "") || undefined };
+  } catch (e) {
+    return { available: false, reason: e instanceof Error ? e.message : "Backend capability unavailable" };
+  }
 }

@@ -35,7 +35,7 @@ def main() -> int:
 
     tasks = []
     for path in sorted((ROOT / "benchmarks" / "stm32f103").glob("*.json")):
-        if path.name in {"latest-summary.json", "results.json"}:
+        if path.name in {"latest-summary.json", "results.json", "failure-breakdown.json"}:
             continue
         data = json.loads(path.read_text(encoding="utf-8"))
         missing = REQUIRED_TASK_FIELDS - data.keys()

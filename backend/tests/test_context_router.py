@@ -34,3 +34,24 @@ def test_current_context_is_replaced() -> None:
     current = [m for m in messages if str(m.get("content", "")).startswith("[CURRENT_CONTEXT]")]
     assert len(current) == 1
     assert current[0]["content"].endswith("two")
+
+
+def test_context_router_source_telemetry() -> None:
+    source = {
+        "mcu": "STM32F103C8T6",
+        "errors": [{"message": "syntax error"}],
+        "relevant_files": ["int main() {}"],
+        "skills": [{"id": "gpio"}],
+    }
+    routed = ContextRouter().route(source, level="PROJECT")
+    d = routed.to_dict()
+    assert "_routing" in d
+    routing = d["_routing"]
+    assert "sourceTelemetry" in routing
+    assert "approxTokens" in routing
+    sources = {s["source"]: s for s in routing["sourceTelemetry"]}
+    assert "platform_facts" in sources
+    assert sources["platform_facts"]["priority"] == 1
+    assert sources["errors"]["priority"] == 2
+    assert sources["platform_facts"]["chars"] > 0
+

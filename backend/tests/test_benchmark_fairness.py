@@ -74,3 +74,46 @@ def test_reproducible_metadata_contains_required_fields() -> None:
     # Never leak API key or full URL with credentials
     assert "apiKey" not in meta
     assert "test-key" not in str(meta)
+
+
+def test_benchmark_failure_taxonomy() -> None:
+    # 1. LLM / Timeout
+    assert benchmark.classify_failure(error="Request timed out") == "TIMEOUT"
+    assert benchmark.classify_failure(error="API rate limit exceeded") == "LLM_GENERATION_ERROR"
+    assert benchmark.classify_failure(error="Hardware disconnected") == "HARDWARE_UNAVAILABLE"
+
+    # 2. Compile / Link errors
+    assert benchmark.classify_failure(compiler_logs="undefined reference to HAL_GPIO_Init", exit_code=1) == "LINK_ERROR"
+    assert benchmark.classify_failure(compiler_logs="syntax error before token", exit_code=1) == "SYNTAX_ERROR"
+    assert benchmark.classify_failure(compiler_logs="fatal error: stm32f1xx_hal.h: No such file", exit_code=1) == "COMPILE_ERROR"
+
+    # 3. Agent loop limit & validation
+    assert benchmark.classify_failure(iterations=10, max_iterations=10) == "AGENT_LOOP_LIMIT"
+    assert benchmark.classify_failure(validation_score=0.5) == "STATIC_VALIDATION_ERROR"
+
+
+def test_benchmark_diff_evidence_saving(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-test-ev"
+    task_dir = benchmark.save_task_evidence(
+        run_dir=run_dir,
+        tid="01",
+        prompt="Configure LED PC13",
+        starting_project_meta={"id": "proj-1", "mcu": "STM32F103C8T6"},
+        baseline_code="/* baseline code */",
+        agent_code="/* agent code with LED */",
+        initial_code="/* starting code */",
+        compiler_logs="Build OK",
+        validator_logs="Score 1.0",
+        metrics={"status": "PASS", "seconds": 3.2},
+    )
+    assert task_dir.is_dir()
+    assert (task_dir / "prompt.txt").read_text(encoding="utf-8") == "Configure LED PC13"
+    assert (task_dir / "starting_project.json").is_file()
+    assert (task_dir / "baseline_output.c").is_file()
+    assert (task_dir / "agent_output.c").is_file()
+    assert (task_dir / "agent_patches.diff").is_file()
+    assert (task_dir / "final_diff.diff").is_file()
+    assert (task_dir / "metrics.json").is_file()
+    diff_content = (task_dir / "agent_patches.diff").read_text(encoding="utf-8")
+    assert "+/* agent code with LED */" in diff_content
+

@@ -58,6 +58,10 @@ class ToolSpec:
     writes_files: bool = False
     uses_hardware: bool = False
     timeout: int = 30
+    idempotent: bool = True
+    resume_policy: str = "replay"  # replay, verify_before_retry, never_replay, skip
+    replay_safe: bool = True
+    irreversible: bool = False
 
     def openai_schema(self) -> dict[str, Any]:
         return {"type": "function", "function": {"name": self.name, "description": self.description, "parameters": dict(self.schema)}}
@@ -74,6 +78,10 @@ class ToolSpec:
             "writesFiles": self.writes_files,
             "usesHardware": self.uses_hardware,
             "timeout": self.timeout,
+            "idempotent": self.idempotent,
+            "resumePolicy": self.resume_policy,
+            "replaySafe": self.replay_safe,
+            "irreversible": self.irreversible,
         }
 
     def available(self) -> tuple[bool, str | None]:
@@ -227,6 +235,10 @@ def _spec(
     writes_files: bool | None = None,
     uses_hardware: bool | None = None,
     timeout: int | None = None,
+    idempotent: bool | None = None,
+    resume_policy: str | None = None,
+    replay_safe: bool | None = None,
+    irreversible: bool = False,
 ) -> ToolSpec:
     approval = ApprovalPolicy.ALWAYS if effect is ToolEffect.DEVICE else ApprovalPolicy.MODE_DEPENDENT if effect is ToolEffect.WORKSPACE_WRITE else ApprovalPolicy.NEVER
     eff_risk = risk or ("hardware" if effect is ToolEffect.DEVICE else "write" if effect is ToolEffect.WORKSPACE_WRITE else "safe")
@@ -234,6 +246,32 @@ def _spec(
     eff_writes = writes_files if writes_files is not None else (effect is ToolEffect.WORKSPACE_WRITE)
     eff_hw = uses_hardware if uses_hardware is not None else (effect is ToolEffect.DEVICE)
     eff_timeout = timeout if timeout is not None else (120 if effect is ToolEffect.BUILD else 30)
+
+    # Derive idempotency & resume policy
+    if idempotent is not None:
+        eff_idempotent = idempotent
+    elif effect in {ToolEffect.READ, ToolEffect.BUILD}:
+        eff_idempotent = True
+    elif name == "write_file":
+        eff_idempotent = True
+    elif name in {"serial_read", "read_register"}:
+        eff_idempotent = True
+    else:
+        eff_idempotent = False
+
+    if resume_policy is not None:
+        eff_resume_policy = resume_policy
+    elif irreversible:
+        eff_resume_policy = "never_replay"
+    elif effect in {ToolEffect.READ, ToolEffect.BUILD} or name in {"serial_read", "read_register"}:
+        eff_resume_policy = "replay"
+    else:
+        eff_resume_policy = "verify_before_retry"
+
+    if replay_safe is not None:
+        eff_replay_safe = replay_safe
+    else:
+        eff_replay_safe = eff_idempotent and eff_resume_policy == "replay"
 
     # Derive platforms
     eff_platforms = platforms
@@ -256,6 +294,10 @@ def _spec(
         writes_files=eff_writes,
         uses_hardware=eff_hw,
         timeout=eff_timeout,
+        idempotent=eff_idempotent,
+        resume_policy=eff_resume_policy,
+        replay_safe=eff_replay_safe,
+        irreversible=irreversible,
     )
 
 

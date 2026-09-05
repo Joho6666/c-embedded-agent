@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -54,6 +56,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class CrashInjectedError(RuntimeError):
+    """Exception injected during testing to simulate process crashes."""
+    __test__ = False
+
+
+def _check_crash(run: AgentRun, phase: str) -> None:
+    crash_target = getattr(run, "crash_at_phase", None) or os.environ.get("CEA_TEST_CRASH_PHASE")
+    if crash_target and crash_target.strip().lower() == phase.strip().lower():
+        run.phase = phase
+        run.save_checkpoint()
+        raise CrashInjectedError(f"Simulated process crash injected at phase: {phase}")
+
+
 class AgentRun:
     def __init__(self, run_id: str, project_id: str, prompt: str, mode: str) -> None:
         self.id = run_id
@@ -86,6 +101,17 @@ class AgentRun:
         self.messages: list[dict[str, Any]] = []
         self.action_plan: dict[str, Any] | None = None
 
+        # Phase-aware resume & idempotency tracking
+        self.step_id: str = ""
+        self.completed_steps: list[str] = []
+        self.pending_step: str | None = None
+        self.idempotency_key: str = ""
+        self.last_tool_call: dict[str, Any] | None = None
+        self.last_tool_result: dict[str, Any] | None = None
+        self.executed_tools: list[dict[str, Any]] = []
+        self.resumed: bool = False
+        self.crash_at_phase: str | None = None
+
     def create_checkpoint(self) -> RunCheckpoint:
         return RunCheckpoint(
             run_id=self.id,
@@ -105,6 +131,14 @@ class AgentRun:
             serial_device=self.serial_device,
             serial_baud=self.serial_baud,
             expect=self.expect,
+            step_id=self.step_id,
+            completed_steps=list(self.completed_steps),
+            pending_step=self.pending_step,
+            idempotency_key=self.idempotency_key,
+            last_tool_call=self.last_tool_call,
+            last_tool_result=self.last_tool_result,
+            workspace_snapshot=self.snapshot_sha,
+            executed_tools=list(self.executed_tools),
         )
 
     def save_checkpoint(self) -> None:
@@ -142,12 +176,20 @@ def restore_run_from_checkpoint(checkpoint: RunCheckpoint) -> AgentRun:
     run.messages = list(checkpoint.messages)
     run.last_errors = list(checkpoint.last_errors)
     run.citations = list(checkpoint.citations)
-    run.snapshot_sha = checkpoint.snapshot_sha
+    run.snapshot_sha = checkpoint.snapshot_sha or checkpoint.workspace_snapshot
     run.action_plan = checkpoint.action_plan
     run.loaded_skills = list(checkpoint.loaded_skills)
     run.serial_device = checkpoint.serial_device
     run.serial_baud = checkpoint.serial_baud
     run.expect = checkpoint.expect
+    run.step_id = checkpoint.step_id
+    run.completed_steps = list(checkpoint.completed_steps)
+    run.pending_step = checkpoint.pending_step
+    run.idempotency_key = checkpoint.idempotency_key
+    run.last_tool_call = checkpoint.last_tool_call
+    run.last_tool_result = checkpoint.last_tool_result
+    run.executed_tools = list(checkpoint.executed_tools)
+    run.resumed = True
     RUNS[run.id] = run
     return run
 
@@ -320,6 +362,11 @@ async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str, *
         before = read_file(root, path)
     except FileNotFoundError:
         before = ""
+    write_key = f"{path}:{hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]}"
+    if before == content:
+        run.executed_tools.append({"key": write_key, "tool": "write_file", "path": path, "success": True})
+        return "ok (already written)"
+
     approval_id = uuid.uuid4().hex[:10]
     gated = run.mode == "code" or force_approval
     run.emit(
@@ -342,6 +389,12 @@ async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str, *
     write_file(root, path, content, advanced=run.advanced)
     save_file_change(run.id, path, before, content)
     run.write_approved = True
+    run.executed_tools.append({"key": write_key, "tool": "write_file", "path": path, "success": True})
+    run.completed_steps.append(f"write:{path}")
+    run.step_id = f"write:{path}"
+    run.phase = "after_write"
+    run.save_checkpoint()
+    _check_crash(run, "after_write")
     return "ok"
 
 
@@ -349,10 +402,21 @@ async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str, *, 
     if run.cancelled():
         return "RUN_STOPPED"
     before = read_file(root, path)
+    patch_key = f"{path}:{hashlib.sha256(patch.encode('utf-8')).hexdigest()[:16]}"
+
+    # Check idempotency: avoid double-patching upon resume
+    if any(t.get("key") == patch_key and t.get("success") for t in run.executed_tools):
+        return "ok (already applied in previous execution)"
+
     try:
         proposed = preview_patch(before, patch)
     except PatchError as e:
         return str(e)
+
+    if before == proposed:
+        run.executed_tools.append({"key": patch_key, "tool": "apply_patch", "path": path, "success": True})
+        return "ok (already applied)"
+
     gated = run.mode == "code" or force_approval
     approval_id = uuid.uuid4().hex[:10]
     run.emit(
@@ -378,12 +442,20 @@ async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str, *, 
         return str(e)
     save_file_change(run.id, path, before, after)
     run.write_approved = True
+    run.executed_tools.append({"key": patch_key, "tool": "apply_patch", "path": path, "success": True})
+    run.completed_steps.append(f"patch:{path}")
+    run.step_id = f"patch:{path}"
+    run.phase = "after_patch"
+    run.save_checkpoint()
+    _check_crash(run, "after_patch")
     return "ok"
 
 
-
-
 async def _compile(run: AgentRun, root: Path, adapter: PlatformAdapter) -> dict[str, Any]:
+    run.phase = "during_compile"
+    run.save_checkpoint()
+    _check_crash(run, "during_compile")
+
     async def on_line(stream: str, line: str) -> None:
         run.emit(type="terminal", status="running", title="make", stream=stream, content=line, output=line)
 
@@ -453,6 +525,10 @@ async def _compile(run: AgentRun, root: Path, adapter: PlatformAdapter) -> dict[
             run.emit(type="test", status="success", title="cppcheck", description=str(cpp["diagnostics"][:8]))
         elif not cpp.get("available"):
             run.emit(type="test", status="success", title="cppcheck Unavailable")
+
+    run.phase = "after_compile"
+    run.save_checkpoint()
+    _check_crash(run, "after_compile")
     return result
 
 
@@ -505,13 +581,23 @@ async def _maybe_run_on_device(run: AgentRun, root: Path, adapter: PlatformAdapt
 
 
 async def _flash_tool(run: AgentRun, root: Path, adapter: PlatformAdapter) -> str:
+    run.phase = "before_flash"
+    run.save_checkpoint()
+    _check_crash(run, "before_flash")
     data = adapter.flash(root, device=run.serial_device).to_dict()
     ok = bool(data.get("success"))
     run.emit(type="flash", status="success" if ok else "failed", title="Flash", output=str(data.get("output") or "")[-2000:])
+    run.phase = "after_flash"
+    run.completed_steps.append("flash")
+    run.save_checkpoint()
+    _check_crash(run, "after_flash")
     return json.dumps(data, ensure_ascii=False)[:8000]
 
 
 async def _serial_tool(run: AgentRun, args: dict[str, Any], adapter: PlatformAdapter) -> str:
+    run.phase = "before_serial"
+    run.save_checkpoint()
+    _check_crash(run, "before_serial")
     device = str(args.get("device") or run.serial_device or "")
     baud = int(args.get("baud") or run.serial_baud or 115200)
     if not device:
@@ -525,6 +611,10 @@ async def _serial_tool(run: AgentRun, args: dict[str, Any], adapter: PlatformAda
         run.emit(type="serial", status="success", title="Serial", output=f"[00:00.{i}] {line}")
     if not lines:
         run.emit(type="serial", status="failed", title="Serial", description="no serial output")
+    run.phase = "after_serial"
+    run.completed_steps.append("serial")
+    run.save_checkpoint()
+    _check_crash(run, "after_serial")
     return json.dumps(sample, ensure_ascii=False)[:8000]
 
 
@@ -540,10 +630,11 @@ async def run_agent(run: AgentRun) -> None:
             finish_run(run.id, "failed")
             return
 
-        try:
-            run.snapshot_sha = snapshot(root, f"pre-run {run.id}")
-        except Exception:
-            run.snapshot_sha = ""
+        if not run.resumed:
+            try:
+                run.snapshot_sha = snapshot(root, f"pre-run {run.id}")
+            except Exception:
+                run.snapshot_sha = ""
 
         resolution = default_registry(settings.repo_root).detect(root)
         if resolution.status != "resolved" or resolution.adapter is None:
@@ -557,28 +648,43 @@ async def run_agent(run: AgentRun) -> None:
         skill_selection = SkillRouter().select(
             run.prompt, platform=adapter.adapter_id, context_level=workflow.context_level
         )
-        run.loaded_skills = [skill.to_dict() for skill in skill_selection.skills]
+        if not run.resumed or not run.loaded_skills:
+            run.loaded_skills = [skill.to_dict() for skill in skill_selection.skills]
         tool_groups = {"read"} if run.mode == "plan" else set(workflow.allowed_tool_groups)
         tool_schemas = default_tool_registry().schemas(groups=tool_groups)
-        run.emit(
-            type="routing", status="success", title="任务路由",
-            classification=classification.to_dict(), workflow=workflow.to_dict(),
-            contextLevel=workflow.context_level.value,
-            skills=[skill.id for skill in skill_selection.skills],
-            tools=[item["function"]["name"] for item in tool_schemas],
-            adapterId=adapter.adapter_id,
-        )
-        plan = make_plan(run.prompt)
-        run.action_plan = {"steps": plan}
-        run.phase = "plan"
-        run.save_checkpoint()
-        run.emit(
-            type="plan",
-            status="running",
-            title="任务计划",
-            description="\n".join(f"{s['index']}. {s['title']}" for s in plan),
-            plan=plan,
-        )
+
+        if not run.resumed:
+            run.emit(
+                type="routing", status="success", title="任务路由",
+                classification=classification.to_dict(), workflow=workflow.to_dict(),
+                contextLevel=workflow.context_level.value,
+                skills=[skill.id for skill in skill_selection.skills],
+                tools=[item["function"]["name"] for item in tool_schemas],
+                adapterId=adapter.adapter_id,
+            )
+            plan = make_plan(run.prompt)
+            run.action_plan = {"steps": plan}
+            run.phase = "plan"
+            run.step_id = "plan"
+            run.completed_steps.append("plan")
+            run.save_checkpoint()
+            run.emit(
+                type="plan",
+                status="running",
+                title="任务计划",
+                description="\n".join(f"{s['index']}. {s['title']}" for s in plan),
+                plan=plan,
+            )
+            _check_crash(run, "after_plan")
+        else:
+            run.emit(
+                type="resume_started",
+                status="running",
+                title="从断点恢复执行",
+                phase=run.phase,
+                iteration=run.iteration,
+                completedSteps=run.completed_steps,
+            )
         try:
             files = list_files(root)
             facts = adapter.load_context(root).get("facts") or {}
@@ -636,25 +742,31 @@ async def run_agent(run: AgentRun) -> None:
 
 async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflow: Any, tool_schemas: list[dict[str, Any]]) -> None:
     platform_context = adapter.load_context(root)
-    ctx = build_context(
-        root,
-        iteration=0,
-        prompt=run.prompt,
-        extra_skills=run.loaded_skills,
-        platform_context=platform_context,
-    )
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM},
-        {
-            "role": "user",
-            "content": f"{context_prompt(ctx)}\n任务：{run.prompt}\n工程已存在。先读文件，再最小修改并编译直到 exit code == 0。"
-            f"{' 编译成功后可用 run_on_device / flash_firmware / serial_read。无调试器时不要声称烧录成功。' if _wants_device(run.prompt) else ''}",
-        },
-    ]
-    if looks_complex(run.prompt):
+    if not run.resumed or not run.messages:
+        ctx = build_context(
+            root,
+            iteration=0,
+            prompt=run.prompt,
+            extra_skills=run.loaded_skills,
+            platform_context=platform_context,
+        )
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": SYSTEM},
+            {
+                "role": "user",
+                "content": f"{context_prompt(ctx)}\n任务：{run.prompt}\n工程已存在。先读文件，再最小修改并编译直到 exit code == 0。"
+                f"{' 编译成功后可用 run_on_device / flash_firmware / serial_read。无调试器时不要声称烧录成功。' if _wants_device(run.prompt) else ''}",
+            },
+        ]
+        start_iteration = 0
+    else:
+        messages = list(run.messages)
+        start_iteration = max(0, run.iteration - 1) if run.phase in {"reasoning", "tool_call"} and len(messages) > 2 else run.iteration
+
+    if looks_complex(run.prompt) and not run.resumed:
         run.emit(type="reasoning", status="success", title="复杂任务，已生成 Plan")
 
-    for i in range(settings.max_agent_iterations):
+    for i in range(start_iteration, settings.max_agent_iterations):
         if run.cancelled():
             raise asyncio.CancelledError()
         run.iteration = i + 1
@@ -688,13 +800,19 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
             run.emit(type="reasoning", status="success", title="模型回复", description=text[:500])
             if run.mode == "plan":
                 run.status = "success"
+                run.phase = "done"
+                run.save_checkpoint()
                 return
             if run.mode == "code" and not run.write_approved:
                 run.emit(type="compile", status="failed", title="构建未执行", description="code 模式需要先批准修改")
                 run.status = "failed"
+                run.phase = "done"
+                run.save_checkpoint()
                 return
             result = await _compile(run, root, adapter)
             run.status = "success" if result.get("success") else "failed"
+            run.phase = "done"
+            run.save_checkpoint()
             return
         for tc in tool_calls:
             if run.cancelled():
@@ -705,6 +823,9 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
                 args = json.loads(raw_args)
             except json.JSONDecodeError:
                 args = {}
+            run.last_tool_call = {"name": fn, "arguments": args}
+            run.phase = "tool_call"
+            run.save_checkpoint()
             run.emit(type="tool_call", status="running", title=fn, tool={"name": fn, "command": fn})
             registry = default_tool_registry()
             try:

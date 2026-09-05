@@ -2,7 +2,9 @@
 """STM32F103 Agent vs Plain LLM benchmark harness with reproducible environment tracking."""
 from __future__ import annotations
 
+import argparse
 import datetime
+import difflib
 import hashlib
 import json
 import os
@@ -22,6 +24,89 @@ OUTPUT_BUDGET = int(os.environ.get("BENCH_OUTPUT_TOKENS", "2048"))
 sys.path.insert(0, str(ROOT / "backend"))
 os.chdir(ROOT)
 
+FAILURE_TAXONOMY = (
+    "LLM_GENERATION_ERROR",
+    "SYNTAX_ERROR",
+    "COMPILE_ERROR",
+    "LINK_ERROR",
+    "STATIC_VALIDATION_ERROR",
+    "SEMANTIC_ERROR",
+    "TOOL_ERROR",
+    "TIMEOUT",
+    "AGENT_LOOP_LIMIT",
+    "HARDWARE_UNAVAILABLE",
+)
+
+
+def classify_failure(
+    *,
+    error: str | None = None,
+    compiler_logs: str = "",
+    exit_code: int | None = None,
+    validation_score: float | None = None,
+    iterations: int = 0,
+    max_iterations: int = 10,
+    requires_hardware: bool = False,
+    has_hardware: bool = False,
+) -> str:
+    if error:
+        err_lower = error.lower()
+        if "timeout" in err_lower or "timed out" in err_lower:
+            return "TIMEOUT"
+        if "hardware" in err_lower:
+            return "HARDWARE_UNAVAILABLE"
+        if "tool" in err_lower:
+            return "TOOL_ERROR"
+        return "LLM_GENERATION_ERROR"
+    if requires_hardware and not has_hardware:
+        return "HARDWARE_UNAVAILABLE"
+    if exit_code is not None and exit_code != 0:
+        logs_lower = compiler_logs.lower()
+        if any(k in logs_lower for k in ("multiple definition", "ld returned", "undefined reference", "relocation")):
+            return "LINK_ERROR"
+        if any(k in logs_lower for k in ("syntax error", "expected", "undeclared", "unknown type name")):
+            return "SYNTAX_ERROR"
+        return "COMPILE_ERROR"
+    if iterations >= max_iterations:
+        return "AGENT_LOOP_LIMIT"
+    if validation_score is not None and validation_score < 0.8:
+        return "STATIC_VALIDATION_ERROR"
+    return "SEMANTIC_ERROR"
+
+
+def save_task_evidence(
+    run_dir: Path,
+    tid: str,
+    prompt: str,
+    starting_project_meta: dict,
+    baseline_code: str,
+    agent_code: str,
+    initial_code: str,
+    compiler_logs: str,
+    validator_logs: str,
+    metrics: dict,
+) -> Path:
+    task_dir = run_dir / f"task-{tid}"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
+    (task_dir / "starting_project.json").write_text(json.dumps(starting_project_meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    (task_dir / "baseline_output.c").write_text(baseline_code, encoding="utf-8")
+    (task_dir / "agent_output.c").write_text(agent_code, encoding="utf-8")
+    (task_dir / "compiler_logs.txt").write_text(compiler_logs, encoding="utf-8")
+    (task_dir / "validator_logs.txt").write_text(validator_logs, encoding="utf-8")
+    (task_dir / "metrics.json").write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    diff_lines = list(difflib.unified_diff(
+        initial_code.splitlines(keepends=True),
+        agent_code.splitlines(keepends=True),
+        fromfile="starting/main.c",
+        tofile="agent/main.c",
+    ))
+    diff_text = "".join(diff_lines)
+    (task_dir / "agent_patches.diff").write_text(diff_text, encoding="utf-8")
+    (task_dir / "final_diff.diff").write_text(diff_text, encoding="utf-8")
+    return task_dir
+
 
 def gcc_ok() -> bool:
     from app.tools.toolchain import prepend_toolchain_path
@@ -39,7 +124,7 @@ def llm_ok() -> bool:
 def load_tasks() -> list[dict]:
     tasks = []
     for p in sorted(TASK_DIR.glob("*.json")):
-        if p.name in {"results.json", "latest-summary.json"}:
+        if p.name in {"results.json", "latest-summary.json", "failure-breakdown.json"}:
             continue
         task = json.loads(p.read_text(encoding="utf-8"))
         required = {"id", "prompt", "platform", "category", "fixture", "oracle", "requirements", "environment", "evidence"}
@@ -215,22 +300,62 @@ def empty_summary(*, gcc: bool, llm: bool, skipped: list[str], model: str, env: 
 def main() -> int:
     from app.config.settings import settings
 
-    limit_raw = os.environ.get("BENCH_LIMIT")
-    tasks = load_tasks()
-    if limit_raw:
-        tasks = tasks[: int(limit_raw)]
+    parser = argparse.ArgumentParser(description="STM32F103 Agent vs Plain LLM Benchmark Harness")
+    parser.add_argument("--mode", default="compare", choices=["compare", "single"], help="Evaluation mode (default: compare)")
+    parser.add_argument("--smoke", action="store_true", help="Run rapid smoke evaluation on 3-5 curated tasks")
+    parser.add_argument("--resume", metavar="RUN_ID", help="Resume an interrupted benchmark run by run ID")
+    parser.add_argument("--runs-per-task", type=int, default=RUNS_PER_TASK, help="Repetitions per task (default: 1)")
+    parser.add_argument("--limit", type=int, default=None, help="Maximum number of tasks to run")
+    args, unknown = parser.parse_known_args()
+
+    limit_raw = args.limit or os.environ.get("BENCH_LIMIT")
+    all_tasks = load_tasks()
+
+    if args.smoke:
+        smoke_ids = {"1", "4", "8", "20", "39"}
+        curated = [t for t in all_tasks if str(t.get("id")) in smoke_ids]
+        tasks = curated if len(curated) >= 3 else all_tasks[:5]
+    elif limit_raw:
+        tasks = all_tasks[: int(limit_raw)]
+    else:
+        tasks = all_tasks
 
     model = os.environ.get("LLM_MODEL") or settings.llm_model or ""
     base_url = settings.llm_base_url
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-    run_dir = RESULTS_BASE / f"run-{timestamp}"
+
+    # Checkpoint and directory resolution
+    resume_checkpoint = None
+    completed_task_ids = set()
+    if args.resume:
+        run_candidates = [
+            RESULTS_BASE / f"run-{args.resume}",
+            RESULTS_BASE / args.resume,
+        ]
+        for rc in run_candidates:
+            if (rc / "checkpoint.json").is_file():
+                run_dir = rc
+                try:
+                    resume_checkpoint = json.loads((rc / "checkpoint.json").read_text(encoding="utf-8"))
+                    completed_task_ids = set(str(tid) for tid in resume_checkpoint.get("completed_task_ids", []))
+                except Exception:
+                    pass
+                break
+        else:
+            run_dir = RESULTS_BASE / f"run-{args.resume}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+        run_dir = RESULTS_BASE / f"run-{timestamp}"
+        run_dir.mkdir(parents=True, exist_ok=True)
 
     env_meta = collect_environment_metadata(model, base_url)
     env_meta["taskHash"] = compute_task_hash(tasks)
     env_meta["projectHash"] = compute_project_hash()
+    env_meta["runsPerTask"] = args.runs_per_task
 
     summary_path = TASK_DIR / "latest-summary.json"
     comparison_path = ROOT / "benchmarks" / "comparison-summary.json"
+    taxonomy_path = TASK_DIR / "failure-breakdown.json"
 
     missing = []
     if not gcc_ok():
@@ -277,10 +402,14 @@ def main() -> int:
         write_json(comparison_path, comp)
 
         # Also write structured run artifact folder
-        write_json(run_dir / "config.json", {"limit": limit_raw, "tasks": len(tasks), "model": model})
+        write_json(run_dir / "config.json", {"limit": limit_raw, "tasks": len(tasks), "model": model, "smoke": args.smoke})
         write_json(run_dir / "environment.json", env_meta)
         write_json(run_dir / "summary.json", summ)
         write_json(run_dir / "comparison.json", comp)
+
+        breakdown = {cat: 0 for cat in FAILURE_TAXONOMY}
+        write_json(run_dir / "failure-breakdown.json", breakdown)
+        write_json(taxonomy_path, breakdown)
 
         print(json.dumps(summ, indent=2))
         print(f"SKIP: {'; '.join(skipped)} — benchmark not run")
@@ -310,26 +439,55 @@ def main() -> int:
     agent_runs: list[dict] = []
     failures: list[dict] = []
 
+    # Resume previous state if available
+    if resume_checkpoint:
+        baseline_runs = list(resume_checkpoint.get("baseline_runs", []))
+        agent_runs = list(resume_checkpoint.get("agent_runs", []))
+        failures = list(resume_checkpoint.get("failures", []))
+        for r in agent_runs:
+            iterations.append(r.get("iterations", 1))
+            latencies.append(r.get("seconds", 0.0))
+            in_tokens += r.get("input_tokens", 0)
+            out_tokens += r.get("output_tokens", 0)
+            if r.get("success"):
+                agent_compile += 1
+            if r.get("semantic_ok"):
+                agent_valid += 1
+        for br in baseline_runs:
+            baseline_tokens += br.get("tokens", 0)
+            baseline_latencies.append(br.get("latency", 0.0))
+            if br.get("compile_success"):
+                baseline_compile += 1
+            if br.get("semantic_success"):
+                baseline_valid += 1
+
     out = {
         "schema_version": 2,
         "status": "RUNNING",
         "gcc": True,
         "llm": True,
         "model": model,
-        "tasks": [],
-        "first_build_success": 0,
-        "auto_fix_success": 0,
-        "compile_success": 0,
-        "semantic_success": 0,
-        "avg_iterations": 0.0,
+        "tasks": list(agent_runs),
+        "first_build_success": sum(1 for r in agent_runs if r.get("first_build_ok")),
+        "auto_fix_success": sum(1 for r in agent_runs if r.get("success") and not r.get("first_build_ok")),
+        "compile_success": agent_compile,
+        "semantic_success": agent_valid,
+        "avg_iterations": sum(iterations) / max(len(iterations), 1) if iterations else 0.0,
         "skipped": [],
         "environment": env_meta,
         "evidence": [],
     }
 
+    template_main = ROOT / "templates" / "stm32f103_hal_official" / "Core" / "Src" / "main.c"
+    initial_main_code = template_main.read_text(encoding="utf-8") if template_main.is_file() else ""
+
     for task in tasks:
-        prompt = task["prompt"]
         tid = task.get("id", "bench")
+        if str(tid) in completed_task_ids:
+            print(f"RESUME: skipping already completed task {tid}")
+            continue
+
+        prompt = task["prompt"]
 
         # 1. Baseline: Prompt -> write main.c -> build (no tools, no skills, no error memory, no fix loop)
         b0 = time.perf_counter()
@@ -348,6 +506,18 @@ def main() -> int:
         if b_sem:
             baseline_valid += 1
 
+        b_main_file = broot / "Core" / "Src" / "main.c"
+        baseline_code = b_main_file.read_text(encoding="utf-8") if b_main_file.is_file() else ""
+
+        b_failure_cat = None
+        if not b_ok or not b_sem:
+            b_failure_cat = classify_failure(
+                error=bw.get("error"),
+                compiler_logs=b_build.get("combined", "") or b_build.get("error", ""),
+                exit_code=b_build.get("exit_code"),
+                validation_score=1.0 if b_sem else 0.0,
+            )
+
         baseline_runs.append({
             "id": tid,
             "compile_success": b_ok,
@@ -355,6 +525,7 @@ def main() -> int:
             "latency": b_sec,
             "tokens": b_tok,
             "error": b_build.get("error"),
+            "failure_category": b_failure_cat,
         })
 
         # 2. C-Embedded Agent: full capabilities
@@ -368,6 +539,21 @@ def main() -> int:
         last_ok = run.status == "success"
         sem = semantic_ok(root, prompt) if last_ok else False
         seconds = round(time.perf_counter() - t0, 2)
+
+        agent_main_file = root / "Core" / "Src" / "main.c"
+        agent_code = agent_main_file.read_text(encoding="utf-8") if agent_main_file.is_file() else ""
+
+        agent_failure_cat = None
+        if not last_ok or not sem:
+            compile_events = [e for e in run.events if e.get("type") == "compile"]
+            last_compile_output = compile_events[-1].get("output", "") if compile_events else ""
+            agent_failure_cat = classify_failure(
+                compiler_logs=last_compile_output,
+                exit_code=0 if last_ok else 1,
+                validation_score=1.0 if sem else 0.0,
+                iterations=run.iteration,
+                max_iterations=settings.max_agent_iterations,
+            )
 
         item = {
             "id": tid,
@@ -383,6 +569,7 @@ def main() -> int:
             "baseline_success": b_ok,
             "baseline_semantic": b_sem,
             "baseline_seconds": b_sec,
+            "failure_category": agent_failure_cat,
             "platform": task["platform"],
             "category": task["category"],
             "fixture": task["fixture"],
@@ -411,6 +598,32 @@ def main() -> int:
         if sem:
             out["semantic_success"] += 1
             agent_valid += 1
+
+        # Save per-task diff evidence
+        save_task_evidence(
+            run_dir=run_dir,
+            tid=str(tid),
+            prompt=prompt,
+            starting_project_meta=meta,
+            baseline_code=baseline_code,
+            agent_code=agent_code,
+            initial_code=initial_main_code,
+            compiler_logs=b_build.get("combined", "") or b_build.get("error", ""),
+            validator_logs=f"semantic_ok={sem}",
+            metrics=item,
+        )
+
+        # Update benchmark checkpoint after every completed task
+        completed_task_ids.add(str(tid))
+        checkpoint_data = {
+            "completed_task_ids": list(completed_task_ids),
+            "last_completed_task": tid,
+            "baseline_runs": baseline_runs,
+            "agent_runs": agent_runs,
+            "failures": failures,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        write_json(run_dir / "checkpoint.json", checkpoint_data)
 
     n = max(len(tasks), 1)
     out["first_build_success_rate"] = out["first_build_success"] / n
@@ -463,8 +676,15 @@ def main() -> int:
     }
     write_json(comparison_path, comparison)
 
-    # Persist structured benchmark run artifacts
-    write_json(run_dir / "config.json", {"limit": limit_raw, "tasks": len(tasks), "model": model})
+    # Persist structured benchmark run artifacts and failure taxonomy
+    breakdown = {cat: 0 for cat in FAILURE_TAXONOMY}
+    for f in failures:
+        cat = f.get("failure_category", "COMPILE_ERROR")
+        breakdown[cat] = breakdown.get(cat, 0) + 1
+    write_json(run_dir / "failure-breakdown.json", breakdown)
+    write_json(taxonomy_path, breakdown)
+
+    write_json(run_dir / "config.json", {"limit": limit_raw, "tasks": len(tasks), "model": model, "smoke": args.smoke})
     write_json(run_dir / "environment.json", env_meta)
     write_json(run_dir / "baseline.json", baseline_runs)
     write_json(run_dir / "agent.json", agent_runs)

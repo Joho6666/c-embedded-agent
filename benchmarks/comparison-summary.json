@@ -13,7 +13,7 @@
   ],
   "reason": "LLM not configured — not faking Agent vs Baseline",
   "environment": {
-    "gitCommitSha": "7047dddcaf4dea80e47c37f39c76c36f9c6f5c50",
+    "gitCommitSha": "33f2d1044d1ac50dc6a09c5f4857e56a857aea9b",
     "os": "Windows-11-10.0.26200-SP0",
     "python": "3.14.6",
     "node": "v24.14.1",
@@ -26,7 +26,7 @@
     "reasoningSetting": null,
     "maxTokens": 2048,
     "runsPerTask": 1,
-    "taskHash": "997dc89b9672c576",
+    "taskHash": "50d3d79a57d51378",
     "projectHash": "55d1abe73cdeaf79"
   },
   "evidence": []

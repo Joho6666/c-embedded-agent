@@ -78,3 +78,19 @@ def test_missing_sdcc_returns_unavailable(monkeypatch, tmp_path: Path) -> None:
     build_res = inst.build(tmp_path)
     assert build_res.status == "UNAVAILABLE"
     assert "not installed" in (build_res.reason or "")
+
+
+def test_8051_golden_projects_present() -> None:
+    golden_dir = Path(__file__).resolve().parents[2] / "examples" / "golden_8051"
+    projects = [p.name for p in golden_dir.iterdir() if p.is_dir()]
+    assert "8051_led" in projects
+    assert "8051_timer" in projects
+    assert "8051_uart" in projects
+    assert "8051_exti" in projects
+    for name in ("8051_led", "8051_timer", "8051_uart", "8051_exti"):
+        p = golden_dir / name
+        assert (p / "Makefile").is_file()
+        assert (p / "main.c").is_file()
+        assert (p / "8051_compat.h").is_file()
+        assert (p / "project.json").is_file()
+

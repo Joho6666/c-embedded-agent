@@ -50,7 +50,7 @@ class Mcu8051SdccAdapter(PlatformAdapter):
             "validate",
             "hardware",
         ),
-        reason="Experimental 8-bit MCU architecture prototype (SDCC + STC89C52RC)",
+        reason="Experimental / Compile Verified (SDCC CI active across 8051 Golden projects)",
     )
 
     @property

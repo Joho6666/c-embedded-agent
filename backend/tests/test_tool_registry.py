@@ -47,3 +47,28 @@ def test_bound_handler_is_validated_and_invoked() -> None:
     registry = ToolRegistry((spec,))
     registry.bind("echo", lambda value: value.upper())
     assert registry.invoke("echo", {"value": "ok"}) == "OK"
+
+
+def test_tool_idempotency_and_resume_policy() -> None:
+    registry = default_tool_registry()
+
+    compile_tool = registry.get("compile_project")
+    assert compile_tool.idempotent is True
+    assert compile_tool.resume_policy == "replay"
+    assert compile_tool.replay_safe is True
+
+    patch_tool = registry.get("apply_patch")
+    assert patch_tool.idempotent is False
+    assert patch_tool.resume_policy == "verify_before_retry"
+    assert patch_tool.replay_safe is False
+
+    flash_tool = registry.get("flash_firmware")
+    assert flash_tool.idempotent is False
+    assert flash_tool.resume_policy == "verify_before_retry"
+    assert flash_tool.replay_safe is False
+
+    read_tool = registry.get("read_file")
+    assert read_tool.idempotent is True
+    assert read_tool.resume_policy == "replay"
+    assert read_tool.replay_safe is True
+

@@ -17,6 +17,26 @@ CONTEXT_SKILL_LIMITS = {
     ContextLevel.PROJECT: 2,
     ContextLevel.DEEP: 4,
 }
+SOURCE_BUDGETS = {
+    "platform_facts": 2_500,
+    "errors": 4_000,
+    "explicit_context": 6_000,
+    "relevant_files": 16_000,
+    "skills": 6_000,
+    "knowledge": 6_000,
+    "project_tree": 4_000,
+    "history": 8_000,
+}
+SOURCE_PRIORITIES = {
+    "platform_facts": 1,
+    "errors": 2,
+    "relevant_files": 3,
+    "skills": 4,
+    "explicit_context": 5,
+    "knowledge": 6,
+    "project_tree": 7,
+    "history": 8,
+}
 
 
 def _infer_fact_origin(key: str) -> str:
@@ -45,6 +65,7 @@ class RoutedContext:
     truncated_sources: tuple[str, ...]
     reasons: tuple[str, ...]
     evidence_origins: dict[str, str] = field(default_factory=dict)
+    source_telemetry: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -53,10 +74,12 @@ class RoutedContext:
                 "contextLevel": self.level.value,
                 "budget": self.budget,
                 "usedChars": self.used_chars,
+                "approxTokens": self.used_chars // 4,
                 "includedSources": list(self.included_sources),
                 "truncatedSources": list(self.truncated_sources),
                 "reasons": list(self.reasons),
                 "evidenceOrigins": dict(self.evidence_origins),
+                "sourceTelemetry": list(self.source_telemetry),
             },
         }
 
@@ -142,7 +165,30 @@ class ContextRouter:
                 routed[key] = source[key]
         used = _size(routed)
         evidence_origins = {k: _infer_fact_origin(k) for k in facts}
-        return RoutedContext(routed, selected_level, budget, used, tuple(included), tuple(truncated), tuple(reasons), evidence_origins=evidence_origins)
+
+        source_telemetry: list[dict[str, Any]] = []
+        for name, value, mandatory in candidates:
+            val_chars = _size(routed.get(name)) if routed.get(name) not in (None, [], {}) else 0
+            source_telemetry.append({
+                "source": name,
+                "priority": SOURCE_PRIORITIES.get(name, 9),
+                "allocatedBudget": SOURCE_BUDGETS.get(name, 5000),
+                "chars": val_chars,
+                "approxTokens": val_chars // 4,
+                "truncated": name in truncated,
+            })
+
+        return RoutedContext(
+            routed,
+            selected_level,
+            budget,
+            used,
+            tuple(included),
+            tuple(truncated),
+            tuple(reasons),
+            evidence_origins=evidence_origins,
+            source_telemetry=source_telemetry,
+        )
 
 
 def route_context(context: dict[str, Any], *, level: ContextLevel | str = ContextLevel.PROJECT) -> dict[str, Any]:

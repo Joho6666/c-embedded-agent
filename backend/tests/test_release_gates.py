@@ -7,7 +7,7 @@ from app.release.evidence import CapabilityStatus
 
 def test_release_gates_reports_engineering_beta(tmp_path: Path) -> None:
     report = evaluate_release_candidate()
-    assert report.version == "0.9.0-beta"
+    assert report.version == "0.9.1-beta"
     assert report.is_production_candidate is False
     assert "NOT Production Candidate" in report.release_decision
     assert "hardware" in report.gates
@@ -33,3 +33,9 @@ def test_platform_capabilities_distinguish_verified_vs_implemented() -> None:
     stm32 = report.capabilities["stm32f103-hal"]
     assert stm32.capabilities["build"].status == CapabilityStatus.VERIFIED_CI
     assert stm32.capabilities["hardware"].status == CapabilityStatus.NOT_TESTED
+
+    mcu8051 = report.capabilities["8051-sdcc"]
+    assert mcu8051.capabilities["build"].status == CapabilityStatus.VERIFIED_CI
+    assert mcu8051.capabilities["hardware"].status == CapabilityStatus.NOT_TESTED
+    assert "8051_golden" in report.gates
+    assert report.gates["8051_golden"].passed is True

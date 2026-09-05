@@ -76,3 +76,7 @@ NUL
 backend/.mimosa/
 *.obj
 *.lst
+examples/golden/*/Drivers/
+!examples/golden/stm32f103_led/Drivers/
+examples/golden_8051/*/build/
+

@@ -103,3 +103,17 @@ def test_structured_error_memory_verified_count() -> None:
     mark_fix_result("hal-uart-init-undef", success=False)
     item_after_fail = get_error("hal-uart-init-undef")
     assert item_after_fail["verified_count"] == initial_verified + 1
+
+    # Failed compile or validator does NOT increment verified_count
+    mark_fix_result("hal-uart-init-undef", success=True, compile_success=False, validator_pass=True)
+    item_after_compile_fail = get_error("hal-uart-init-undef")
+    assert item_after_compile_fail["verified_count"] == initial_verified + 1
+
+    # Full pass (patch + compile + validator) increments verified_count and updates last_success_sha
+    mark_fix_result("hal-uart-init-undef", success=True, compile_success=True, validator_pass=True, git_sha="abc1234")
+    item_after_full = get_error("hal-uart-init-undef")
+    assert item_after_full["verified_count"] == initial_verified + 2
+    assert item_after_full["last_success_sha"] == "abc1234"
+    assert item_after_full["success_count"] >= 2
+    assert item_after_full["confidence"] > 0.0
+

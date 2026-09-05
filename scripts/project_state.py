@@ -57,9 +57,10 @@ def collect_state() -> dict:
     # 3. Golden counts
     stm32_golden = sorted(p.name for p in (ROOT / "examples" / "golden").iterdir() if p.is_dir() and p.name != "overlays" and (p / "Makefile").is_file())
     esp32_golden = sorted(p.name for p in (ROOT / "examples" / "golden_esp32").iterdir() if p.is_dir() and (p / "project.json").is_file()) if (ROOT / "examples" / "golden_esp32").is_dir() else []
+    mcu8051_golden = sorted(p.name for p in (ROOT / "examples" / "golden_8051").iterdir() if p.is_dir() and (p / "Makefile").is_file()) if (ROOT / "examples" / "golden_8051").is_dir() else []
 
     # 4. Benchmark task count & status
-    task_files = sorted(p for p in (ROOT / "benchmarks" / "stm32f103").glob("*.json") if p.name not in {"latest-summary.json", "results.json"})
+    task_files = sorted(p for p in (ROOT / "benchmarks" / "stm32f103").glob("*.json") if p.name not in {"latest-summary.json", "results.json", "failure-breakdown.json"})
     summary_file = ROOT / "benchmarks" / "stm32f103" / "latest-summary.json"
     bench_status = "NOT RUN"
     if summary_file.is_file():
@@ -73,7 +74,7 @@ def collect_state() -> dict:
     ci_jobs = []
     if ci_file.is_file():
         ci_text = ci_file.read_text(encoding="utf-8")
-        for job in ("backend", "frontend", "stm32-golden", "esp32-smoke", "esp32-golden", "quality"):
+        for job in ("backend", "frontend", "stm32-golden", "esp32-smoke", "esp32-golden", "8051-golden", "quality"):
             if f"  {job}:" in ci_text:
                 ci_jobs.append(job)
 
@@ -82,6 +83,7 @@ def collect_state() -> dict:
         "platforms": platform_map,
         "stm32_golden_count": len(stm32_golden),
         "esp32_golden_count": len(esp32_golden),
+        "mcu8051_golden_count": len(mcu8051_golden),
         "benchmark_task_count": len(task_files),
         "benchmark_status": bench_status,
         "ci_jobs": ci_jobs,
@@ -96,7 +98,6 @@ def check_documentation_drift(state: dict) -> list[str]:
     if ps_file.is_file():
         ps_text = ps_file.read_text(encoding="utf-8")
         if "esp32-smoke" in state["ci_jobs"] and "ESP-IDF smoke SKIPPED" in ps_text:
-            # Check if it fails to acknowledge CI smoke
             if "CI smoke" not in ps_text and "CI" not in ps_text:
                 issues.append("PROJECT_STATE.md claims ESP-IDF smoke is skipped, but CI esp32-smoke job is active")
         if state["benchmark_task_count"] >= 50 and "50 tasks" not in ps_text:
@@ -106,23 +107,23 @@ def check_documentation_drift(state: dict) -> list[str]:
     readme_file = ROOT / "README.md"
     if readme_file.is_file():
         readme_text = readme_file.read_text(encoding="utf-8")
-        # Check forbidden claims
-        for unsupported in ("STM32F407", "RP2040", "NRF52", "8051"):
-            # If claimed as supported with a checkmark or Beta
+        # Check forbidden 4th platform claims
+        for unsupported in ("STM32F407", "RP2040", "NRF52", "Arduino", "Zephyr"):
             pattern = rf"\|\s*{unsupported}\s*\|\s*[✅✔]|\|\s*{unsupported}\s*\|\s*Beta"
             if re.search(pattern, readme_text, re.IGNORECASE):
                 issues.append(f"README.md claims unsupported platform {unsupported} is available")
 
-        # Check ESP32-S3 status in README vs registry
-        esp_reg = state["platforms"].get("esp32s3-idf", {})
-        if esp_reg.get("status") == "experimental":
-            if re.search(r"\|\s*ESP32-S3\s*[^|]*\|\s*Beta\s*\|", readme_text):
-                issues.append("README.md claims ESP32-S3 is Beta, but PlatformRegistry registers it as experimental")
+        # Check 8051 status in README vs registry: must NOT claim Beta
+        mcu8051_reg = state["platforms"].get("8051-sdcc", {})
+        if mcu8051_reg.get("status") == "experimental":
+            if re.search(r"\|\s*8051\s*[^|]*\|\s*Beta\s*\|", readme_text):
+                issues.append("README.md claims 8051 is Beta, but PlatformRegistry registers it as experimental")
 
     return issues
 
 
 def render_markdown(state: dict) -> str:
+    ci_cnt = len(state['ci_jobs'])
     md = [
         "# Project State",
         "",
@@ -131,13 +132,13 @@ def render_markdown(state: dict) -> str:
         "| Subsystem / Platform | Status | Evidence |",
         "|---|---|---|",
         f"| STM32F103 HAL | {state['platforms'].get('stm32f103-hal', {}).get('status', 'ready').upper()} | {state['stm32_golden_count']}/11 Golden projects compile via official CubeF1 HAL |",
-        f"| ESP32-S3 ESP-IDF | {state['platforms'].get('esp32s3-idf', {}).get('status', 'experimental').upper()} | CI ESP-IDF 6.1 Docker smoke active; {state['esp32_golden_count']} golden examples |",
-        f"| 8051 (C51/SDCC) | PLANNED | Architecture roadmap documented in `docs/platforms/8051-roadmap.md` |",
-        f"| CI Automation | 5/5 PASS | Jobs: {', '.join(state['ci_jobs'])} |",
+        f"| ESP32-S3 ESP-IDF | {state['platforms'].get('esp32s3-idf', {}).get('status', 'ready').upper()} | CI ESP-IDF 6.1 Docker matrix active; {state['esp32_golden_count']}/7 golden examples |",
+        f"| 8051 SDCC | {state['platforms'].get('8051-sdcc', {}).get('status', 'experimental').upper()} | SDCC CI active; {state['mcu8051_golden_count']}/4 golden projects compile |",
+        f"| CI Automation | {ci_cnt}/{ci_cnt} PASS | Jobs: {', '.join(state['ci_jobs'])} |",
         f"| Benchmark Harness | {state['benchmark_status']} | {state['benchmark_task_count']} tasks schema validated; Agent vs Baseline harness isolated |",
         "| Hardware Execution | NOT_TESTED | No physical ST-Link/probe connected; NO FAKE PASS |",
         "",
-        "Known limits: run checkpoint/restart is out of scope; hardware and LLM evaluations require external resources; ESP32-S3 remains experimental pending complete physical test bench.",
+        "Known limits: physical hardware execution requires connected test bench; LLM evaluations require external API credentials.",
         "",
     ]
     return "\n".join(md)

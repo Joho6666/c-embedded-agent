@@ -50,7 +50,16 @@ def test_led_without_optical_probe_is_partial() -> None:
 def test_exti_requires_manual_button_step() -> None:
     hw = hardware_status(serial_lines=None, expect=None, task="exti", has_probe=False)
     assert hw["status"] == "MANUAL_STEP_REQUIRED"
+    assert hw["state"] == "WAITING_FOR_USER"
     assert "manual user button press" in hw["reason"]
+
+
+def test_8051_isp_requires_waiting_user() -> None:
+    hw = hardware_status(serial_lines=None, expect=None, task="8051_isp", has_probe=False)
+    assert hw["status"] == "MANUAL_STEP_REQUIRED"
+    assert hw["state"] == "WAITING_FOR_USER"
+    assert "power cycle" in hw["reason"]
+
 
 
 def test_usart_marker_stm32_pass() -> None:

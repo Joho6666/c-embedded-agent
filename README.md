@@ -13,17 +13,17 @@ Requirement
 → Hardware Validate
 ```
 
-Version: **0.9.0-beta** (Engineering Beta). Not a Production Candidate: Physical hardware testing is incomplete, and Agent vs Baseline evaluation was skipped without LLM credentials. See `PROJECT_STATE.md` and `RELEASE_REPORT.md`.
+Version: **0.9.1-beta** (Engineering Beta). Not a Production Candidate: Physical hardware testing is incomplete, and Agent vs Baseline evaluation was skipped without LLM credentials. See `PROJECT_STATE.md` and `RELEASE_REPORT.md`.
 
 ## Support Matrix
 
 | Platform | Framework | Status |
 |---|---|---|
-| STM32F103 | CubeF1 HAL | Beta |
-| ESP32-S3 | ESP-IDF | Experimental |
-| 8051 | — | Planned |
+| STM32F103 | CubeF1 HAL | Beta (Compile Verified) |
+| ESP32-S3 | ESP-IDF | Beta (Compile Verified) |
+| 8051 | SDCC | Experimental (Compile Verified) |
 
-Do not claim generic ESP32 / 8051 / STM32F4 / RP2040 / nRF52 are available. Only `stm32f103-hal` (Beta) and `esp32s3-idf` (Experimental) are registered in the runtime.
+Do not claim generic STM32F4 / RP2040 / nRF52 / Arduino / Zephyr are available. Only `stm32f103-hal` (Beta), `esp32s3-idf` (Beta), and `8051-sdcc` (Experimental) are registered in the runtime.
 
 ## Modes
 

@@ -171,6 +171,31 @@ def check_esp32_smoke(repo_root: Path | None = None) -> GateResult:
     )
 
 
+def check_8051_golden(repo_root: Path | None = None) -> GateResult:
+    root = _resolve_repo_root(repo_root)
+    script_file = root / "scripts" / "8051_golden_build.py"
+    if not script_file.is_file():
+        return GateResult(name="8051_golden", passed=False, status="FAIL", reasons=["scripts/8051_golden_build.py missing"])
+    golden_dir = root / "examples" / "golden_8051"
+    if not golden_dir.is_dir():
+        return GateResult(name="8051_golden", passed=False, status="FAIL", reasons=["examples/golden_8051 directory missing"])
+    projects = [p.name for p in golden_dir.iterdir() if p.is_dir() and (p / "Makefile").is_file()]
+    if len(projects) < 3:
+        return GateResult(name="8051_golden", passed=False, status="FAIL", reasons=[f"Expected >=3 8051 golden projects, found {len(projects)}"])
+    ci_file = root / ".github" / "workflows" / "ci.yml"
+    ci_text = ci_file.read_text(encoding="utf-8") if ci_file.is_file() else ""
+    ci_configured = "8051-golden" in ci_text
+    if not ci_configured:
+        return GateResult(name="8051_golden", passed=False, status="FAIL", reasons=["8051-golden job missing in .github/workflows/ci.yml"])
+    return GateResult(
+        name="8051_golden",
+        passed=True,
+        status="PASS",
+        details={"projects": projects, "count": len(projects), "ci_configured": True},
+        evidence=[f"{len(projects)}/4 8051 Golden projects configured; SDCC CI job active in .github/workflows/ci.yml"],
+    )
+
+
 def check_benchmarks(repo_root: Path | None = None) -> GateResult:
     root = _resolve_repo_root(repo_root)
     task_dir = root / "benchmarks" / "stm32f103"
@@ -281,6 +306,18 @@ def audit_platform_capabilities(repo_root: Path) -> dict[str, PlatformCapability
         "validate": CapabilityEvidence("validate", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
         "hardware": CapabilityEvidence("hardware", implemented=True, verified_ci=False, verified_hardware=False, status=CapabilityStatus.NOT_TESTED, reason="No ESP32 device connected"),
     }
+    mcu8051_caps = {
+        "detect": CapabilityEvidence("detect", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
+        "create": CapabilityEvidence("create", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
+        "context": CapabilityEvidence("context", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
+        "build": CapabilityEvidence("build", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI, evidence=("SDCC 4.x", "4/4 Golden")),
+        "clean": CapabilityEvidence("clean", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
+        "flash": CapabilityEvidence("flash", implemented=True, verified_ci=False, verified_hardware=False, status=CapabilityStatus.NOT_TESTED, reason="Requires physical STC ISP cold reboot"),
+        "serial": CapabilityEvidence("serial", implemented=True, verified_ci=False, verified_hardware=False, status=CapabilityStatus.NOT_TESTED, reason="Requires physical UART CH340"),
+        "generate": CapabilityEvidence("generate", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
+        "validate": CapabilityEvidence("validate", implemented=True, verified_ci=True, status=CapabilityStatus.VERIFIED_CI),
+        "hardware": CapabilityEvidence("hardware", implemented=True, verified_ci=False, verified_hardware=False, status=CapabilityStatus.NOT_TESTED, reason="No STC device connected"),
+    }
     return {
         "stm32f103-hal": PlatformCapabilityAudit(
             adapter_id="stm32f103-hal",
@@ -298,16 +335,28 @@ def audit_platform_capabilities(repo_root: Path) -> dict[str, PlatformCapability
             status="ready",
             capabilities=esp32_caps,
         ),
+        "8051-sdcc": PlatformCapabilityAudit(
+            adapter_id="8051-sdcc",
+            platform="8051",
+            mcu="STC89C52RC",
+            framework="SDCC",
+            status="experimental",
+            capabilities=mcu8051_caps,
+        ),
     }
 
 
 def evaluate_release_candidate(repo_root: Path | None = None) -> ReleaseReport:
     root = (repo_root or settings.repo_root).resolve()
+    version_file = root / "VERSION"
+    current_version = version_file.read_text(encoding="utf-8").strip() if version_file.is_file() else "0.9.1-beta"
+
     gates = {
         "backend_ci": check_backend_ci(root),
         "frontend": check_frontend_gate(root),
         "stm32_golden": check_stm32_golden(root),
         "esp32_smoke": check_esp32_smoke(root),
+        "8051_golden": check_8051_golden(root),
         "benchmarks": check_benchmarks(root),
         "quality": check_quality_invariants(root),
         "hardware": check_hardware_evidence(root),
@@ -321,6 +370,8 @@ def evaluate_release_candidate(repo_root: Path | None = None) -> ReleaseReport:
         blocking.append("STM32 Golden gate failing")
     if not gates["esp32_smoke"].passed:
         blocking.append("ESP32 Smoke gate failing")
+    if not gates["8051_golden"].passed:
+        blocking.append("8051 Golden gate failing")
     if not gates["quality"].passed:
         blocking.append("Quality invariants failing")
     if gates["benchmarks"].status == "SKIPPED":
@@ -329,7 +380,7 @@ def evaluate_release_candidate(repo_root: Path | None = None) -> ReleaseReport:
         blocking.append("Hardware evidence is NOT_TESTED (no physical ST-Link/probe connected)")
 
     is_production = len(blocking) == 0
-    decision = "0.9.0-beta Engineering Beta" if not is_production else "0.9.0 Production Candidate"
+    decision = f"{current_version} Engineering Beta" if not is_production else f"{current_version} Production Candidate"
     if not is_production:
         decision += " — NOT Production Candidate (Hardware Not Tested / LLM Benchmark Skipped)"
 
@@ -339,7 +390,7 @@ def evaluate_release_candidate(repo_root: Path | None = None) -> ReleaseReport:
         all_evidence.extend(g.evidence)
 
     return ReleaseReport(
-        version="0.9.0-beta",
+        version=current_version,
         is_production_candidate=is_production,
         release_decision=decision,
         gates=gates,

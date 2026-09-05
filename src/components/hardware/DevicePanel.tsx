@@ -56,7 +56,11 @@ export function DevicePanel() {
         <div className="flex justify-between">
           <dt className="text-muted-foreground">Platform</dt>
           <dd className="font-mono text-xs">
-            {ctx.mcu?.includes("ESP32") ? "ESP32-S3 (Experimental)" : "STM32F103 (Beta)"}
+            {ctx.mcu?.includes("ESP32")
+              ? "ESP32-S3 (Beta — Compile Verified)"
+              : ctx.mcu?.includes("8051") || ctx.mcu?.includes("STC")
+              ? "8051 SDCC (Experimental — Compile Verified)"
+              : "STM32F103 (Beta — Compile Verified)"}
           </dd>
         </div>
         <div className="flex justify-between">

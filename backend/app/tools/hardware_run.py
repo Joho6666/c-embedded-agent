@@ -75,10 +75,27 @@ def save_hardware_run_artifact(
     }
 
     (runs_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    (runs_dir / "build.log").write_text(build_log or "", encoding="utf-8")
-    (runs_dir / "flash.log").write_text(flash_log or "", encoding="utf-8")
-    (runs_dir / "serial.log").write_text(serial_log or "", encoding="utf-8")
-    (runs_dir / "validation.json").write_text(json.dumps(validation_data or {}, indent=2), encoding="utf-8")
+    if build_log:
+        (runs_dir / "build.log").write_text(build_log, encoding="utf-8")
+    if flash_log:
+        (runs_dir / "flash.log").write_text(flash_log, encoding="utf-8")
+    if serial_log:
+        (runs_dir / "serial.log").write_text(serial_log, encoding="utf-8")
+    if validation_data:
+        (runs_dir / "validation.json").write_text(json.dumps(validation_data, indent=2), encoding="utf-8")
+
+    val_status = (validation_data or {}).get("status", "UNKNOWN")
+    summary = {
+        "runId": run_id,
+        "platform": platform_name,
+        "mcu": mcu,
+        "status": val_status,
+        "hasBuild": bool(build_log),
+        "hasFlash": bool(flash_log),
+        "hasSerial": bool(serial_log),
+        "validated": bool(val_status in {"PASS", "VERIFIED_HARDWARE"}),
+    }
+    (runs_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return runs_dir
 
 

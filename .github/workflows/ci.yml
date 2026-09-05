@@ -90,6 +90,22 @@ jobs:
           espressif/idf:v6.1
           bash -lc "cd /project/examples/golden_esp32/${{ matrix.project }} && idf.py set-target esp32s3 && idf.py build"
 
+  8051-golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDCC and Make
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sdcc make
+      - name: Report toolchain
+        run: |
+          sdcc --version
+          packihx || true
+          make --version
+      - name: Build and verify 8051 Golden projects
+        run: python scripts/8051_golden_build.py
+
   quality:
     runs-on: ubuntu-latest
     steps:

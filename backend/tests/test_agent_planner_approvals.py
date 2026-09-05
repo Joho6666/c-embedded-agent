@@ -18,6 +18,18 @@ def test_structured_action_plan_output() -> None:
     assert "read_file" in tools
     assert "compile_project" in tools
 
+    plan_dict = plan.to_dict()
+    assert plan_dict["workflow"]
+    assert isinstance(plan_dict["steps"], list)
+
+    for s_dict in plan_dict["steps"]:
+        assert s_dict["id"].startswith("step-")
+        assert s_dict["tool"]
+        assert s_dict["reason"]
+        assert isinstance(s_dict["expectedEvidence"], list)
+        assert s_dict["resumePolicy"] in {"replay", "verify_before_retry", "never_replay", "skip"}
+        assert isinstance(s_dict["requiresApproval"], bool)
+
     for step in plan.steps:
         assert step.tool
         assert step.reason
@@ -37,6 +49,13 @@ def test_hardware_action_plan_requires_approval() -> None:
     tools = [s.tool for s in plan.steps]
     assert "flash_firmware" in tools
     assert "serial_sample" in tools
+
+    # Verify no fake pass when probe is disconnected
+    flash_step = next(s for s in plan.steps if s.tool == "flash_firmware")
+    evidence_text = " ".join(flash_step.expected_evidence if isinstance(flash_step.expected_evidence, list) else [flash_step.expected_evidence])
+    # When no physical probe is connected, expected evidence must state UNAVAILABLE
+    assert "UNAVAILABLE" in evidence_text or "probe" in evidence_text.lower()
+
 
 
 def test_approval_policy_manager_categories() -> None:

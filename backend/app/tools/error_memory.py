@@ -252,6 +252,12 @@ def ensure_schema() -> None:
             con.execute("ALTER TABLE error_memories ADD COLUMN verified_count INTEGER DEFAULT 0")
         if "last_verified" not in existing:
             con.execute("ALTER TABLE error_memories ADD COLUMN last_verified TEXT")
+        if "success_count" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN success_count INTEGER DEFAULT 0")
+        if "failure_count" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN failure_count INTEGER DEFAULT 0")
+        if "last_success_sha" not in existing:
+            con.execute("ALTER TABLE error_memories ADD COLUMN last_success_sha TEXT")
 
         for t in TEMPLATES:
             con.execute(
@@ -301,6 +307,9 @@ def _row(r: Any) -> dict[str, Any]:
         "confidence": float(r["confidence"] if r["confidence"] is not None else 0.9),
         "verified_count": int(r["verified_count"] or 0),
         "last_verified": r["last_verified"],
+        "success_count": int(r["success_count"] if "success_count" in r.keys() and r["success_count"] is not None else r["successful_runs"] or 0),
+        "failure_count": int(r["failure_count"] if "failure_count" in r.keys() and r["failure_count"] is not None else r["failed_runs"] or 0),
+        "last_success_sha": r["last_success_sha"] if "last_success_sha" in r.keys() and r["last_success_sha"] is not None else "",
         "occurrences": occ,
         "successRate": rate,
         "successfulRuns": ok,
@@ -373,29 +382,46 @@ def record_from_output(output: str, *, success: bool) -> list[str]:
     return hits
 
 
-def mark_fix_result(eid: str, *, success: bool) -> None:
+def mark_fix_result(
+    eid: str,
+    *,
+    success: bool = True,
+    compile_success: bool = True,
+    validator_pass: bool = True,
+    git_sha: str | None = None,
+) -> None:
     ensure_schema()
+    full_pass = bool(success and compile_success and validator_pass)
     with connect() as con:
-        if success:
+        if full_pass:
             con.execute(
                 """UPDATE error_memories
                    SET occurrences=occurrences+1,
                        successful_runs=successful_runs+1,
+                       success_count=success_count+1,
                        verified_count=verified_count+1,
                        last_verified=?,
-                       last_seen=?
+                       last_seen=?,
+                       last_success_sha=?
                    WHERE id=?""",
-                (now(), now(), eid),
+                (now(), now(), git_sha or "", eid),
             )
         else:
             con.execute(
                 """UPDATE error_memories
                    SET occurrences=occurrences+1,
                        failed_runs=failed_runs+1,
+                       failure_count=failure_count+1,
                        last_seen=?
                    WHERE id=?""",
                 (now(), eid),
             )
+        row = con.execute("SELECT success_count, failure_count FROM error_memories WHERE id=?", (eid,)).fetchone()
+        if row:
+            s_cnt = int(row[0] or 0)
+            f_cnt = int(row[1] or 0)
+            conf = round((s_cnt + 1) / (s_cnt + f_cnt + 2), 4)
+            con.execute("UPDATE error_memories SET confidence=? WHERE id=?", (conf, eid))
 
 
 def apply_known_fix(root: Path, error_id: str) -> dict[str, Any]:

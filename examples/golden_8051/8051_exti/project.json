@@ -1,0 +1,9 @@
+{
+  "name": "8051_exti",
+  "mcu": "STC89C52RC",
+  "platform": "8051",
+  "framework": "SDCC",
+  "adapterId": "8051-sdcc",
+  "board": "stc89c52_dev",
+  "description": "8051 External Interrupt 0 (INT0) triggered on P3.2 falling edge, toggling P1.0 LED."
+}

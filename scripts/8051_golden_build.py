@@ -68,7 +68,7 @@ def main() -> int:
             shutil.copytree(source, project)
 
             clean = subprocess.run([make, "clean"], cwd=project, env=env, text=True, capture_output=True)
-            result = subprocess.run([make, "all"], cwd=project, env=env, text=True, capture_output=True)
+            result = subprocess.run([make, "all", "CC=sdcc", "PACKIHX=packihx"], cwd=project, env=env, text=True, capture_output=True)
 
             build_dir = project / "build"
             ihx_path = build_dir / "firmware.ihx"

@@ -1,5 +1,5 @@
-CC ?= sdcc
-PACKIHX ?= packihx
+CC = sdcc
+PACKIHX = packihx
 
 CFLAGS ?= -mmcs51 --model-small
 BUILD_DIR ?= build

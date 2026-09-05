@@ -235,7 +235,7 @@ class Mcu8051SdccAdapter(PlatformAdapter):
                 "SDCC toolchain (sdcc and make) is not installed on this system",
             )
         make = tools["make"]
-        res = subprocess.run([make, "all"], cwd=root, text=True, capture_output=True, check=False)
+        res = subprocess.run([make, "all", "CC=sdcc", "PACKIHX=packihx"], cwd=root, text=True, capture_output=True, check=False)
         combined = res.stdout + res.stderr
         ok = res.returncode == 0
         artifacts = []

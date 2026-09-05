@@ -15,22 +15,33 @@ FLASH_LIMIT = 8 * 1024  # 8KB ROM for STC89C52RC
 RAM_LIMIT = 512         # 512B RAM for STC89C52RC (256 internal + 256 aux)
 
 
-def _check_hex_content(hex_path: Path) -> bool:
-    """Verify the Intel HEX file contains real record lines and EOF record (:00000001FF)."""
+def _check_hex_content(hex_path: Path) -> tuple[bool, int]:
+    """Verify Intel HEX contains valid records and calculate total payload bytes."""
     if not hex_path.is_file() or hex_path.stat().st_size == 0:
-        return False
+        return False, 0
     text = hex_path.read_text(encoding="utf-8", errors="replace")
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
-        return False
-    # All non-empty lines must start with ':'
-    if not all(line.startswith(":") for line in lines):
-        return False
-    # Last line should be EOF record :00000001FF
-    has_eof = any(line == ":00000001FF" for line in lines)
-    # Must contain at least one data record
-    has_data = any(line.startswith(":") and len(line) > 11 and line[7:9] == "00" for line in lines)
-    return has_eof and has_data
+        return False, 0
+    payload_bytes = 0
+    has_eof = False
+    has_data = False
+    for line in lines:
+        if not line.startswith(":"):
+            continue
+        if len(line) < 11:
+            continue
+        try:
+            length = int(line[1:3], 16)
+            record_type = line[7:9]
+            if record_type == "00":
+                has_data = True
+                payload_bytes += length
+            elif record_type == "01":
+                has_eof = True
+        except ValueError:
+            return False, 0
+    return (has_eof and has_data), payload_bytes
 
 
 def main() -> int:
@@ -77,29 +88,19 @@ def main() -> int:
             clean_ok = clean.returncode == 0
             build_ok = result.returncode == 0
             ihx_ok = ihx_path.is_file() and ihx_path.stat().st_size > 0
-            hex_ok = _check_hex_content(hex_path)
-
-            # Check ROM limit if .mem file is available from SDCC
-            mem_file = build_dir / "firmware.mem"
-            rom_ok = True
-            if mem_file.is_file():
-                mem_text = mem_file.read_text(encoding="utf-8", errors="replace")
-                for line in mem_text.splitlines():
-                    if "FLASH" in line.upper() or "ROM" in line.upper():
-                        parts = line.split()
-                        for part in parts:
-                            if part.isdigit() and int(part) > FLASH_LIMIT:
-                                rom_ok = False
+            hex_ok, payload_bytes = _check_hex_content(hex_path)
+            rom_ok = 0 < payload_bytes <= FLASH_LIMIT
 
             good = clean_ok and build_ok and ihx_ok and hex_ok and rom_ok
             ihx_size = ihx_path.stat().st_size if ihx_path.is_file() else 0
             hex_size = hex_path.stat().st_size if hex_path.is_file() else 0
             status_str = "PASS" if good else "FAIL"
-            print(f"{status_str} {source.name} (ihx: {ihx_size} B, hex: {hex_size} B)")
+            print(f"{status_str} {source.name} (payload: {payload_bytes} B, ihx: {ihx_size} B, hex: {hex_size} B)")
 
             if not good:
                 failed.append(source.name)
                 print(f"--- Build failure diagnostics for {source.name} ---")
+                print(f"Flags: clean_ok={clean_ok}, build_ok={build_ok}, ihx_ok={ihx_ok}, hex_ok={hex_ok}, rom_ok={rom_ok} (payload={payload_bytes})")
                 print((clean.stdout + clean.stderr + result.stdout + result.stderr)[-3000:])
 
     if failed:

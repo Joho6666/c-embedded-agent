@@ -62,6 +62,9 @@ class ToolSpec:
     resume_policy: str = "replay"  # replay, verify_before_retry, never_replay, skip
     replay_safe: bool = True
     irreversible: bool = False
+    # Argument naming the workspace file a write targets. ``None`` for writes
+    # whose target files are chosen by the platform adapter (configure_*, ...).
+    path_arg: str | None = None
 
     def openai_schema(self) -> dict[str, Any]:
         return {"type": "function", "function": {"name": self.name, "description": self.description, "parameters": dict(self.schema)}}
@@ -165,6 +168,7 @@ class ToolRegistry:
         write_approved: bool = False,
         contained_path: bool = True,
         standard_write_path: bool = True,
+        adapter_managed: bool = False,
     ) -> ToolAuthorization:
         spec = self.get(name)
         mode = mode.casefold()
@@ -181,6 +185,9 @@ class ToolRegistry:
                 return ToolAuthorization(False, reason="workspace path containment failed")
             if mode == "code":
                 return ToolAuthorization(True, True, "code mode requires approval for workspace writes")
+            if adapter_managed:
+                # The adapter picks the target files and enforces its own write scope.
+                return ToolAuthorization(True, spec.approval is ApprovalPolicy.ALWAYS)
             if mode == "auto" and not standard_write_path:
                 return ToolAuthorization(False, reason="auto mode permits only standard writable paths")
             if protected_path:
@@ -298,6 +305,7 @@ def _spec(
         resume_policy=eff_resume_policy,
         replay_safe=eff_replay_safe,
         irreversible=irreversible,
+        path_arg="path" if properties and "path" in properties else None,
     )
 
 

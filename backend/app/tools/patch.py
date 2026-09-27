@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from app.workspace.paths import assert_writable, resolve_in_root
+from app.workspace.paths import WriteScope, assert_writable, resolve_in_root
 
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -12,9 +12,9 @@ class PatchError(ValueError):
     pass
 
 
-def apply_patch(root: Path, rel: str, patch: str, *, advanced: bool = False) -> str:
+def apply_patch(root: Path, rel: str, patch: str, *, advanced: bool = False, scope: WriteScope | None = None) -> str:
     """Apply a unified diff. Returns new content or raises PatchError('PATCH_FAILED: ...')."""
-    norm = assert_writable(rel, advanced=advanced)
+    norm = assert_writable(rel, advanced=advanced, scope=scope)
     path = resolve_in_root(root, norm)
     if not path.is_file():
         raise PatchError(f"PATCH_FAILED: file not found: {norm}")

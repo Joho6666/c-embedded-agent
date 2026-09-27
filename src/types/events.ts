@@ -19,6 +19,7 @@ export type AgentEventType =
   | "pin_conflict"
   | "terminal"
   | "run_stopped"
+  | "run_finished"
   | "build_result";
 
 export type AgentEventStatus =

@@ -39,6 +39,10 @@ class Esp32S3IdfAdapter(PlatformAdapter):
         return (".git", "project.json", "sdkconfig", "partitions.csv")
 
     @property
+    def writable_prefixes(self) -> tuple[str, ...]:
+        return ("main/",)
+
+    @property
     def tools(self) -> tuple[str, ...]:
         return ("compile_project", "flash_firmware", "serial_sample", "configure_gpio", "configure_usart", "validate_project")
 

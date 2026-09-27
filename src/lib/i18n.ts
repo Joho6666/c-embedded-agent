@@ -22,6 +22,7 @@ export const eventTypeLabel: Record<AgentEventType, string> = {
   pin_conflict: "引脚冲突",
   terminal: "终端",
   run_stopped: "已停止",
+  run_finished: "运行结束",
   build_result: "构建结果",
 };
 

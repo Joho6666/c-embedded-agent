@@ -48,6 +48,8 @@ export function createRemoteAgentBackend(): AgentBackend {
           if (event.id && seen.has(event.id)) return;
           if (event.id) seen.add(event.id);
           onEvent(event);
+          // Terminal events end the run; closing stops EventSource auto-reconnect.
+          if (event.type === "run_finished" || event.type === "run_stopped") es.close();
         } catch {
           /* ignore */
         }

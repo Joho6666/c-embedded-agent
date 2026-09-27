@@ -29,7 +29,7 @@ export function AgentEventCard({ event }: { event: AgentEvent }) {
         </span>
       </div>
       <h3 className="mt-1 text-[13px] font-medium">{keilCompile ? "Keil MDK 编译" : event.title}</h3>
-      {event.description && event.description !== "__run_end__" && (
+      {event.description && (
         <p className="mt-1 text-[12px] leading-5 text-muted-foreground">{event.description}</p>
       )}
       {event.source && (

@@ -96,11 +96,15 @@ Refresh: `python examples/golden/sync_overlay.py all`
 
 Read the tree → Knowledge / MCU pin / IOC / Skill recipe → `configure_*` for init → LLM writes application logic → `make` → known Error Memory fix before asking the model again.
 
-Default writes are limited to `Core/Src` and `Core/Inc`. Protected: `Drivers/`, `Middlewares/`, `startup*.s`, `*.ld`, `Makefile`, `*.ioc`. HAL sources are registered with `register_hal_module`, not by letting the model edit the Makefile.
+Default writes are limited to each platform adapter's write scope (`PlatformAdapter.write_scope`): `Core/Src`, `Core/Inc`, `App`, `User` for STM32F103; `main/` for ESP32-S3; root `*.c`/`*.h` plus `src/`, `inc/`, `include/` for 8051 (excluding `8051_compat.h`). Adapter-managed tools (`configure_*`, `register_hal_module`, `apply_error_memory_fix`) choose their own files and are allowed in auto mode. Protected: `Drivers/`, `Middlewares/`, `startup*.s`, `*.ld`, `Makefile`, `*.ioc`. HAL sources are registered with `register_hal_module`, not by letting the model edit the Makefile.
 
 Context priority: **IOC > project.json > Board Profile > Default**.
 
 Existing STM32 trees can be scanned/imported (`scan_existing_project` / `POST /api/projects/import-existing`) instead of rebuilding from the template. Import-ioc still creates a template project plus the `.ioc` sidecar.
+
+## Run events
+
+`GET /api/runs/{id}/events` is SSE. Every frame has an `id:`; reconnecting with `Last-Event-ID` (or `?lastEventId=`) replays later events. Every run ends with a `run_finished` event (`status` success/failed) or `run_stopped` when cancelled, after which the stream closes.
 
 ## Hardware
 

@@ -2,6 +2,7 @@
 
 - [Roadmap and open-source references](ROADMAP.md)
 - [Behavioural simulation (Renode)](SIMULATION.md)
+- [cea-embedded plugin: MCP server + skills](PLUGIN.md)
 - [Platform adapters](platform-adapters.md)
 - [Context, skill and workflow routing](routing.md)
 - [Hardware evidence](hardware-testing.md)

@@ -7,11 +7,14 @@ from app.services import llm
 
 
 class _Response:
+    status_code = 200
+    text = ""
+
     def raise_for_status(self) -> None:
         return None
 
     def json(self) -> dict:
-        return {"choices": []}
+        return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
 
 
 @pytest.mark.asyncio

@@ -40,10 +40,9 @@ export function createMockAgentBackend(): AgentBackend {
     emit(run.id, {
       id: uid("ev"),
       runId: run.id,
-      type: status === "success" ? "plan" : "error",
+      type: "run_finished",
       status: status === "success" ? "success" : "failed",
       title: status === "success" ? "运行完成" : (error ?? "已停止"),
-      description: "__run_end__",
       timestamp: nowIso(),
     });
   }

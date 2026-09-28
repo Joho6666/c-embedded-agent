@@ -62,6 +62,15 @@ class Mcu8051SdccAdapter(PlatformAdapter):
         return (".git", "project.json", "8051_compat.h")
 
     @property
+    def writable_prefixes(self) -> tuple[str, ...]:
+        return ("src/", "inc/", "include/")
+
+    @property
+    def writable_root_suffixes(self) -> tuple[str, ...]:
+        # The SDCC template is flat: main.c lives in the project root.
+        return (".c", ".h")
+
+    @property
     def tools(self) -> tuple[str, ...]:
         return ("compile_project", "flash_firmware", "serial_sample", "validate_project")
 

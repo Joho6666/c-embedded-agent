@@ -1,5 +1,6 @@
 # Documentation Index
 
+- [Roadmap and open-source references](ROADMAP.md)
 - [Platform adapters](platform-adapters.md)
 - [Context, skill and workflow routing](routing.md)
 - [Hardware evidence](hardware-testing.md)

@@ -12,7 +12,7 @@ export function AgentTimeline({ events }: { events: AgentEvent[] }) {
   return (
     <div className="space-y-2">
       {events
-        .filter((e) => e.description !== "__run_end__")
+        .filter((e) => e.type !== "run_finished")
         .map((e) => (
           <AgentEventCard key={e.id} event={e} />
         ))}

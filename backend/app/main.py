@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -406,7 +406,10 @@ def file_get(project_id: str, path: str) -> dict[str, str]:
 @app.put("/api/projects/{project_id}/file")
 def file_put(project_id: str, body: WriteFileBody) -> dict[str, str]:
     try:
-        write_file(project_root(project_id), body.path, body.content, advanced=False)
+        root = project_root(project_id)
+        resolution = default_registry(settings.repo_root).detect(root)
+        scope = resolution.adapter.write_scope if resolution.adapter is not None else None
+        write_file(root, body.path, body.content, advanced=False, scope=scope)
         return {"ok": "1", "path": body.path}
     except (FileNotFoundError, PathEscapeError, ProtectedPathError) as e:
         raise HTTPException(400, str(e)) from None
@@ -498,10 +501,16 @@ def get_run(run_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/runs/{run_id}/events")
-async def sse(run_id: str) -> StreamingResponse:
+async def sse(
+    run_id: str,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    lastEventId: str | None = None,
+) -> StreamingResponse:
     if run_id not in RUNS:
         raise HTTPException(404, "run not found")
-    return StreamingResponse(event_stream(run_id), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(run_id, last_event_id or lastEventId), media_type="text/event-stream"
+    )
 
 
 @app.post("/api/runs/{run_id}/stop")

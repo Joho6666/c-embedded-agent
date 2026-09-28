@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 
@@ -23,6 +24,33 @@ FORBIDDEN_WRITE = (
 )
 
 
+@dataclass(frozen=True)
+class WriteScope:
+    """Paths an agent may write by default for one platform layout.
+
+    ``prefixes`` are directory prefixes (``Core/Src/``); ``root_suffixes`` allow
+    files directly in the project root (``main.c`` for flat 8051 projects);
+    ``protected`` are exact paths or directory prefixes that stay read-only.
+    """
+
+    prefixes: tuple[str, ...] = ALLOWED_WRITE_PREFIXES
+    root_suffixes: tuple[str, ...] = ()
+    protected: tuple[str, ...] = ()
+
+    def is_protected(self, norm: str) -> bool:
+        return any(norm == item or norm.startswith(item.rstrip("/") + "/") for item in self.protected)
+
+    def allows(self, norm: str) -> bool:
+        if self.is_protected(norm):
+            return False
+        if any(norm.startswith(p) for p in self.prefixes):
+            return True
+        return "/" not in norm and norm.lower().endswith(self.root_suffixes)
+
+
+DEFAULT_WRITE_SCOPE = WriteScope()
+
+
 def resolve_in_root(root: Path, rel: str) -> Path:
     root = root.resolve()
     raw = (root / rel).resolve()
@@ -38,7 +66,7 @@ def normalize_rel(rel: str) -> str:
     return p
 
 
-def assert_writable(rel: str, *, advanced: bool = False) -> str:
+def assert_writable(rel: str, *, advanced: bool = False, scope: WriteScope | None = None) -> str:
     norm = normalize_rel(rel)
     if advanced:
         return norm
@@ -51,8 +79,6 @@ def assert_writable(rel: str, *, advanced: bool = False) -> str:
         for p in ("Drivers/", "Drivers", "Middlewares/", "Middlewares")
     ):
         raise ProtectedPathError(f"protected path: {norm}")
-    if not any(norm.startswith(p) or norm == p.rstrip("/") for p in ALLOWED_WRITE_PREFIXES):
-        # allow files directly under Core/Inc or Core/Src without trailing extra
-        if not (norm.startswith("Core/Src/") or norm.startswith("Core/Inc/") or norm.startswith("App/") or norm.startswith("User/")):
-            raise ProtectedPathError(f"write not allowed: {norm}")
+    if not (scope or DEFAULT_WRITE_SCOPE).allows(norm):
+        raise ProtectedPathError(f"write not allowed: {norm}")
     return norm

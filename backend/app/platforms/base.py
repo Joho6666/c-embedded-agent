@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from app.workspace.paths import ALLOWED_WRITE_PREFIXES, WriteScope, normalize_rel
+
 LineCallback = Callable[[str, str], Awaitable[None] | None]
 PlatformStatus = Literal["ready", "experimental", "unsupported"]
 OperationStatus = Literal["PASS", "FAIL", "UNAVAILABLE", "SKIPPED"]
@@ -108,6 +110,30 @@ class PlatformAdapter(ABC):
     @property
     def protected_paths(self) -> tuple[str, ...]:
         return (".git", "project.json")
+
+    @property
+    def writable_prefixes(self) -> tuple[str, ...]:
+        """Directories the agent may write without advanced mode."""
+        return ALLOWED_WRITE_PREFIXES
+
+    @property
+    def writable_root_suffixes(self) -> tuple[str, ...]:
+        """File suffixes writable directly in the project root (flat layouts)."""
+        return ()
+
+    @property
+    def write_scope(self) -> WriteScope:
+        return WriteScope(
+            prefixes=self.writable_prefixes,
+            root_suffixes=self.writable_root_suffixes,
+            protected=self.protected_paths,
+        )
+
+    def is_standard_write_path(self, rel: str) -> bool:
+        try:
+            return self.write_scope.allows(normalize_rel(rel))
+        except ValueError:
+            return False
 
     @property
     def tools(self) -> tuple[str, ...]:

@@ -189,7 +189,7 @@ export const useAgent = create<AgentState>()(
           expect: /hello/i.test(get().prompt) ? "Hello" : undefined,
         });
         const unsub = backend.subscribeEvents(run.id, (event) => {
-          if (event.description !== "__run_end__" && event.type !== "run_stopped") applyEvent(event);
+          if (event.type !== "run_finished" && event.type !== "run_stopped") applyEvent(event);
           set((s) => {
             if (event.type === "run_stopped") {
               return {
@@ -200,7 +200,7 @@ export const useAgent = create<AgentState>()(
                 activeRun: s.activeRun ? { ...s.activeRun, status: "cancelled" } : s.activeRun,
               };
             }
-            if (event.description === "__run_end__") {
+            if (event.type === "run_finished") {
               return {
                 status: event.status === "success" ? "ready" : "stopped",
                 statusText: event.title,

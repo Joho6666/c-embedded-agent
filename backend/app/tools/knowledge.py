@@ -38,20 +38,67 @@ def _parse_note(path: Path) -> dict[str, str]:
     return meta
 
 
-def ingest_markdown() -> int:
+NOTES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS knowledge_notes (
+  path TEXT PRIMARY KEY,
+  signature TEXT,
+  fts_rowid INTEGER
+);
+"""
+
+# Signature of the last synced note set (per database); skips rescans on hot queries.
+_synced_signature: str | None = None
+
+
+def _knowledge_root() -> Path:
     root = settings.knowledge_root
-    if not root.is_absolute():
-        root = Path.cwd() / root
+    return root if root.is_absolute() else Path.cwd() / root
+
+
+def _note_files(root: Path) -> dict[str, Path]:
+    return {
+        str(p.relative_to(root)).replace("\\", "/"): p
+        for p in sorted(root.rglob("*"))
+        if p.is_file() and p.suffix.lower() in {".md", ".txt"}
+    }
+
+
+def ingest_markdown(*, force: bool = False) -> int:
+    """Sync markdown notes into the FTS index incrementally.
+
+    Only notes whose mtime/size changed are re-indexed, and only their own rows
+    are deleted, so PDF pages added by ``ingest_pdf`` survive. Returns the number
+    of notes (re)indexed.
+    """
+    global _synced_signature
+    root = _knowledge_root()
     if not root.is_dir():
+        return 0
+    files = _note_files(root)
+    signatures = {rel: f"{p.stat().st_mtime_ns}:{p.stat().st_size}" for rel, p in files.items()}
+    combined = f"{settings.workspace_root}|{sorted(signatures.items())}"
+    if not force and combined == _synced_signature:
         return 0
     n = 0
     with connect() as con:
-        con.execute("DELETE FROM knowledge_fts")
-        for p in root.rglob("*"):
-            if p.suffix.lower() not in {".md", ".txt"}:
+        con.executescript(NOTES_SCHEMA)
+        known = {r["path"]: (r["signature"], r["fts_rowid"]) for r in con.execute("SELECT * FROM knowledge_notes")}
+        for rel in set(known) - set(files):
+            con.execute("DELETE FROM knowledge_fts WHERE rowid = ?", (known[rel][1],))
+            con.execute("DELETE FROM knowledge_notes WHERE path = ?", (rel,))
+        for rel, path in files.items():
+            if not force and known.get(rel, (None,))[0] == signatures[rel]:
                 continue
-            note = _parse_note(p)
-            con.execute(
+            note = _parse_note(path)
+            if rel in known:
+                con.execute("DELETE FROM knowledge_fts WHERE rowid = ?", (known[rel][1],))
+            else:
+                # Rows written by the pre-tracking ingest have no rowid record.
+                con.execute(
+                    "DELETE FROM knowledge_fts WHERE title = ? AND source = ? AND body = ?",
+                    (note["title"], note["source"], note["body"]),
+                )
+            cur = con.execute(
                 """INSERT INTO knowledge_fts(title, body, source, section, page, mcu, kind)
                    VALUES(?,?,?,?,?,?,?)""",
                 (
@@ -64,7 +111,12 @@ def ingest_markdown() -> int:
                     note["type"],
                 ),
             )
+            con.execute(
+                "INSERT OR REPLACE INTO knowledge_notes(path, signature, fts_rowid) VALUES(?,?,?)",
+                (rel, signatures[rel], cur.lastrowid),
+            )
             n += 1
+    _synced_signature = combined
     return n
 
 

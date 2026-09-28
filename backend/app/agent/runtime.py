@@ -33,7 +33,7 @@ from app.tools.debug_read import read_register, read_symbol
 from app.tools.skills import get_skill, skill_summary
 from app.tools.registry import ToolArgumentsError, ToolRegistryError, default_tool_registry
 from app.workspace.manager import project_root
-from app.workspace.paths import PathEscapeError, ProtectedPathError
+from app.workspace.paths import PathEscapeError, ProtectedPathError, WriteScope
 
 SYSTEM = """你是一名资深嵌入式 C 工程师，目标是让当前已注册平台的工程真实构建并保留证据。
 规则：
@@ -76,7 +76,12 @@ class AgentRun:
         self.prompt = prompt
         self.mode = mode
         self.events: list[dict[str, Any]] = []
-        self.queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        # SSE fan-out: every subscriber gets its own queue; ``events`` is the replay log.
+        self.subscribers: set[asyncio.Queue[dict[str, Any] | None]] = set()
+        self.closed = False
+        self._seq = 0
+        # Distinguishes event ids of a resumed run from the original process.
+        self._session = uuid.uuid4().hex[:6]
         self.status = "running"
         self.task: asyncio.Task[None] | None = None
         self.cancel_event = asyncio.Event()
@@ -147,22 +152,52 @@ class AgentRun:
     def cancelled(self) -> bool:
         return self.cancel_event.is_set() or self.status == "cancelled"
 
+    def event_seq(self, event_id: str | None) -> int:
+        """Sequence number of an event id from this session, or 0 if unknown."""
+        prefix = f"{self.id}-{self._session}-"
+        if event_id and event_id.startswith(prefix) and event_id[len(prefix):].isdigit():
+            return int(event_id[len(prefix):])
+        return 0
+
     def emit(self, **kwargs: Any) -> None:
-        if self.cancelled() and kwargs.get("type") not in {"run_stopped", "error"}:
+        if self.closed or (self.cancelled() and kwargs.get("type") not in {"run_stopped", "error"}):
             return
+        self._seq += 1
         ev = {
-            "id": uuid.uuid4().hex[:10],
+            "id": f"{self.id}-{self._session}-{self._seq}",
             "runId": self.id,
             "timestamp": _now(),
             "status": kwargs.get("status", "running"),
             **kwargs,
         }
         self.events.append(ev)
-        self.queue.put_nowait(ev)
+        for queue in self.subscribers:
+            queue.put_nowait(ev)
         try:
             save_event(ev)
         except Exception:
             pass
+
+    def close(self) -> None:
+        """End every SSE stream. Later subscribers only receive the replay log."""
+        if self.closed:
+            return
+        self.closed = True
+        for queue in self.subscribers:
+            queue.put_nowait(None)
+
+    def finish(self) -> None:
+        """Emit the terminal ``run_finished`` event (AG-UI RUN_FINISHED) and close."""
+        if self.status == "running":
+            self.status = "failed"
+        self.emit(
+            type="run_finished",
+            status="success" if self.status == "success" else "failed",
+            title="运行完成" if self.status == "success" else "运行失败",
+            runStatus=self.status,
+            iteration=self.iteration,
+        )
+        self.close()
 
 
 RUNS: dict[str, AgentRun] = {}
@@ -203,13 +238,36 @@ async def resume_run(run_id: str) -> AgentRun:
     return run
 
 
-async def event_stream(run_id: str) -> AsyncIterator[str]:
+def _sse_frame(event: dict[str, Any]) -> str:
+    return f"id: {event['id']}\nevent: agent_event\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+async def event_stream(run_id: str, last_event_id: str | None = None) -> AsyncIterator[str]:
+    """Replay events after ``last_event_id``, then follow live events until the run closes."""
     run = RUNS[run_id]
-    while True:
-        item = await run.queue.get()
-        if item is None:
-            break
-        yield f"event: agent_event\ndata: {json.dumps(item, ensure_ascii=False)}\n\n"
+    last = run.event_seq(last_event_id)
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    # No await between snapshot and subscribe, so no event can fall in between.
+    backlog = [ev for ev in run.events if run.event_seq(ev["id"]) > last]
+    closed = run.closed
+    if not closed:
+        run.subscribers.add(queue)
+    try:
+        for ev in backlog:
+            last = run.event_seq(ev["id"])
+            yield _sse_frame(ev)
+        if closed:
+            return
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if run.event_seq(item["id"]) <= last:
+                continue
+            last = run.event_seq(item["id"])
+            yield _sse_frame(item)
+    finally:
+        run.subscribers.discard(queue)
 
 
 async def request_stop(run: AgentRun) -> None:
@@ -226,7 +284,7 @@ async def request_stop(run: AgentRun) -> None:
         except asyncio.CancelledError:
             pass
     run.emit(type="run_stopped", status="cancelled", title="已停止")
-    run.queue.put_nowait(None)
+    run.close()
     finish_run(run.id, "cancelled", run.iteration)
 
 
@@ -354,7 +412,9 @@ async def _approve_tool(run: AgentRun, name: str, args: dict[str, Any], reason: 
     return await _await_approval(run, approval_id) == "approved"
 
 
-async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str, *, force_approval: bool = False) -> str:
+async def _write_with_diff(
+    run: AgentRun, root: Path, path: str, content: str, *, force_approval: bool = False, scope: WriteScope | None = None
+) -> str:
     if run.cancelled():
         return "RUN_STOPPED"
     before = ""
@@ -386,7 +446,7 @@ async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str, *
         decision = await _await_approval(run, approval_id)
         if decision in {"rejected", "RUN_STOPPED", "pending"}:
             return "rejected" if decision != "RUN_STOPPED" else decision
-    write_file(root, path, content, advanced=run.advanced)
+    write_file(root, path, content, advanced=run.advanced, scope=scope)
     save_file_change(run.id, path, before, content)
     run.write_approved = True
     run.executed_tools.append({"key": write_key, "tool": "write_file", "path": path, "success": True})
@@ -398,7 +458,9 @@ async def _write_with_diff(run: AgentRun, root: Path, path: str, content: str, *
     return "ok"
 
 
-async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str, *, force_approval: bool = False) -> str:
+async def _patch_with_diff(
+    run: AgentRun, root: Path, path: str, patch: str, *, force_approval: bool = False, scope: WriteScope | None = None
+) -> str:
     if run.cancelled():
         return "RUN_STOPPED"
     before = read_file(root, path)
@@ -437,7 +499,7 @@ async def _patch_with_diff(run: AgentRun, root: Path, path: str, patch: str, *, 
         if decision in {"rejected", "RUN_STOPPED", "pending"}:
             return "rejected" if decision != "RUN_STOPPED" else decision
     try:
-        after = apply_patch(root, path, patch, advanced=run.advanced)
+        after = apply_patch(root, path, patch, advanced=run.advanced, scope=scope)
     except PatchError as e:
         return str(e)
     save_file_change(run.id, path, before, after)
@@ -626,7 +688,6 @@ async def run_agent(run: AgentRun) -> None:
         except FileNotFoundError:
             run.emit(type="error", status="failed", title="工程不存在")
             run.status = "failed"
-            run.queue.put_nowait(None)
             finish_run(run.id, "failed")
             return
 
@@ -692,7 +753,6 @@ async def run_agent(run: AgentRun) -> None:
         except OSError as e:
             run.emit(type="error", status="failed", title="无法读取工程", description=str(e))
             run.status = "failed"
-            run.queue.put_nowait(None)
             finish_run(run.id, "failed")
             return
 
@@ -705,8 +765,9 @@ async def run_agent(run: AgentRun) -> None:
             run.emit(type="error", status="failed", title="LLM 不可用", description=str(e))
             if run.mode != "plan" and (run.mode != "code" or run.write_approved):
                 run.emit(type="compile", status="running", title="改为直接构建当前工程", tool={"name": "platform-build", "command": adapter.adapter_id})
-                await _compile(run, root, adapter)
-                run.status = "success" if run.status != "cancelled" and run.events and run.events[-1].get("status") == "success" else run.status
+                compiled = await _compile(run, root, adapter)
+                if run.status != "cancelled":
+                    run.status = "success" if compiled.get("success") else "failed"
             if run.status == "running":
                 run.status = "failed"
         except PathEscapeError as e:
@@ -737,7 +798,7 @@ async def run_agent(run: AgentRun) -> None:
         raise
     finally:
         if not run.cancel_event.is_set():
-            run.queue.put_nowait(None)
+            run.finish()
 
 
 async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflow: Any, tool_schemas: list[dict[str, Any]]) -> None:
@@ -831,16 +892,15 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
             try:
                 spec = registry.get(fn)
                 args = spec.validate(args)
-                raw_path = str(args.get("path") or "").replace("\\", "/").lstrip("/")
-                protected = any(
-                    raw_path == item or raw_path.startswith(item.rstrip("/") + "/")
-                    for item in adapter.protected_paths
-                )
-                standard = raw_path.startswith(("Core/Src/", "Core/Inc/", "main/"))
+                raw_path = str(args.get(spec.path_arg) or "") if spec.path_arg else ""
+                raw_path = raw_path.replace("\\", "/").lstrip("/")
+                scope = adapter.write_scope
                 authorization = registry.authorize(
                     fn, run.mode, hardware_intent=bool(workflow.hardware_intent),
-                    protected_path=protected, write_approved=run.write_approved,
-                    contained_path=True, standard_write_path=standard,
+                    protected_path=bool(raw_path) and scope.is_protected(raw_path),
+                    write_approved=run.write_approved,
+                    contained_path=True, standard_write_path=adapter.is_standard_write_path(raw_path),
+                    adapter_managed=spec.effect.value == "workspace_write" and spec.path_arg is None,
                 )
             except (ToolRegistryError, ToolArgumentsError) as exc:
                 result = json.dumps({"success": False, "status": "REJECTED", "reason": str(exc)}, ensure_ascii=False)
@@ -852,7 +912,7 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
                 try:
                     result = await _write_with_diff(
                         run, root, str(args.get("path", "")), str(args.get("content", "")),
-                        force_approval=authorization.requires_approval,
+                        force_approval=authorization.requires_approval, scope=scope,
                     )
                 except ProtectedPathError as e:
                     result = f"PROTECTED: {e}"
@@ -860,7 +920,7 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
                 try:
                     result = await _patch_with_diff(
                         run, root, str(args.get("path", "")), str(args.get("patch", "")),
-                        force_approval=authorization.requires_approval,
+                        force_approval=authorization.requires_approval, scope=scope,
                     )
                 except (ProtectedPathError, FileNotFoundError) as e:
                     result = f"PATCH_FAILED: {e}"

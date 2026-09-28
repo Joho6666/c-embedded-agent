@@ -196,7 +196,9 @@ def _cli(argv: list[str]) -> Callable[[dict[str, Any], Path, Path], dict[str, An
             )
             output, code = (proc.stdout or "") + "\n--- stderr ---\n" + (proc.stderr or ""), proc.returncode
         except subprocess.TimeoutExpired as e:
-            output, code = f"TIMEOUT after {CLI_TIMEOUT_SEC}s\n{e.stdout or ''}", -1
+            (out_dir / "cli-output.txt").write_text(f"TIMEOUT after {CLI_TIMEOUT_SEC}s\n{e.stdout or ''}", encoding="utf-8")
+            # Over budget is not an infrastructure error: the files it left are still graded.
+            return {"ok": False, "timeout": True, "exit_code": None}
         (out_dir / "cli-output.txt").write_text(output, encoding="utf-8")
         info: dict[str, Any] = {"ok": code == 0, "exit_code": code}
         try:  # claude --output-format json
@@ -255,6 +257,8 @@ def run_arm(arm: str, tasks: list[dict[str, Any]], run_dir: Path, work_root: Pat
             if (project / rel).is_file():
                 shutil.copy2(project / rel, out_dir / rel.replace("/", "_"))
         verdict = "INFRA-ERROR" if row["infra_error"] else ("PASS" if row["passed"] else "FAIL")
+        if solve.get("timeout"):
+            verdict += " (timed out)"
         print(f"[{arm}] {task['id']}: {verdict} "
               f"(build={row['build']} static={row.get('static')} sim={row['simulation']}, {solve_sec}s)", flush=True)
         rows.append(row)
@@ -275,7 +279,8 @@ def summarize(rows: list[dict[str, Any]], tasks: list[dict[str, Any]], arms: lis
             elif r.get("infra_error"):
                 cells.append("⚠️")
             else:
-                cells.append("✅" if r["passed"] else ("🟡" if r["build"] == "PASS" else "❌"))
+                cell = "✅" if r["passed"] else ("🟡" if r["build"] == "PASS" else "❌")
+                cells.append(cell + "⏱" if (r.get("solve") or {}).get("timeout") else cell)
         if not mine:
             lines.append(f"| {arm} | " + " | ".join(cells) + " | — | — | **not scored (arm errors)** |")
             continue
@@ -286,7 +291,8 @@ def summarize(rows: list[dict[str, Any]], tasks: list[dict[str, Any]], arms: lis
         lines.append(f"| {arm} | " + " | ".join(cells) + f" | {build}/{n} | {static}/{n} | **{passed}/{n}** |")
     lines.append("")
     lines.append("✅ behaviour verified in Renode · 🟡 compiles but behaviour wrong/unverified · ❌ does not compile"
-                 " · ⚠️ arm could not run (auth/quota/crash), excluded from score")
+                 " · ⚠️ arm could not run (auth/quota/crash), excluded from score"
+                 f" · ⏱ exceeded the {CLI_TIMEOUT_SEC}s solve budget (result graded as left)")
     return "\n".join(lines)
 
 

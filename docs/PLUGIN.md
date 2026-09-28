@@ -47,7 +47,7 @@ machines — `status.device.virtual_time_s` shows it). First start takes ~20 s.
 
 ## Requirements
 
-- Python 3.11 with `pip install -r backend/requirements.txt` (includes `mcp`)
+- Python 3.11 with `pip install -r backend/requirements.txt` (includes `mcp<2`; the server uses the 1.x `FastMCP` API)
 - `arm-none-eabi-gcc` + `make` on PATH (or `~/tools/xpack-*`, or `CEA_TOOLCHAIN_PATH`)
 - Virtual board: [Renode](https://github.com/renode/renode) (`CEA_RENODE_PATH` or `~/tools/renode*`);
   `verify_behavior` also needs `robotframework==6.1 psutil pyyaml` (`CEA_RENODE_PYTHON` or `~/tools/renode-venv`)

@@ -91,3 +91,12 @@ def test_device_operations_require_detected_hardware(monkeypatch, tmp_path: Path
     assert inst.flash(tmp_path).status == "UNAVAILABLE"
     assert inst.hardware_run(tmp_path).status == "UNAVAILABLE"
     assert inst.serial_sample(device="COM99").status == "UNAVAILABLE"
+
+
+def test_create_accepts_board_display_name(tmp_path: Path) -> None:
+    # The workbench UI sends the display name "Blue Pill", not the board id.
+    adapter = Stm32F103Adapter(Path(__file__).resolve().parents[2])
+    for board in ("Blue Pill", "bluepill", "bluepill_f103c8", None):
+        created = adapter.create_template(tmp_path / str(board).replace(" ", "_"), name="LED", board=board)
+        assert created.success, created.reason
+    assert not adapter.create_template(tmp_path / "x", name="LED", board="Nucleo-F411").success

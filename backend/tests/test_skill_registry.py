@@ -38,3 +38,13 @@ def test_duplicate_ids_and_bad_status_are_rejected(tmp_path) -> None:
     (folder / "two.json").write_text(json.dumps(base), encoding="utf-8")
     with pytest.raises(SkillValidationError):
         SkillRegistry((tmp_path,))
+
+
+def test_every_skill_carries_the_fields_the_workbench_renders() -> None:
+    from app.tools.skills import list_skills
+
+    for skill in list_skills():
+        assert isinstance(skill["platform"], str) and skill["platform"], skill["id"]
+        for key in ("mcuFamilies", "capabilities", "goldenExamples", "knownErrors"):
+            assert isinstance(skill[key], list), (skill["id"], key)
+        assert skill["version"], skill["id"]

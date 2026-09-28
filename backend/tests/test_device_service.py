@@ -110,3 +110,27 @@ def test_project_and_pin_validation(tmp_path: Path) -> None:
     assert parse_pin("PC13") == ("C", 13) and parse_pin("a0") == ("A", 0)
     with pytest.raises(ValueError):
         parse_pin("PZ3")
+
+
+class LateSerialBoard(ScriptedBoard):
+    """Delivers serial bytes from another thread after the simulation step returns (loaded host)."""
+
+    def advance(self, seconds: float) -> None:
+        import threading
+        import time as _time
+
+        def late() -> None:
+            _time.sleep(0.4)
+            self.emit_serial("usart1", "Hello\r\n")
+
+        threading.Thread(target=late, daemon=True).start()
+
+
+def test_flash_waits_for_late_serial_bytes(monkeypatch, tmp_path: Path) -> None:
+    svc = DeviceService(LateSerialBoard({}), pace_interval_s=0.01)
+    monkeypatch.setattr(svc, "build", lambda project=None: {"success": True, "memory": None, "warnings": 0, "seconds": 0})
+    try:
+        result = svc.flash(str(_project(tmp_path, "late", "fw")), expect="Hello", observe_s=0.1)
+        assert result["expect_found"] is True, result["serial"]
+    finally:
+        svc.close()

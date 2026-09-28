@@ -107,4 +107,8 @@ class SkillDefinition:
         # Old clients still consume these camelCase names.
         out["goldenExamples"] = list(self.golden_examples)
         out["knownErrors"] = list(self.known_errors)
+        # The workbench SkillCard renders these unconditionally.
+        out["platform"] = ", ".join(self.platforms)
+        out.setdefault("mcuFamilies", [])
+        out.setdefault("version", "1")
         return out

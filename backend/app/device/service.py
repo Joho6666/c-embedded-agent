@@ -64,6 +64,7 @@ class DeviceService:
         self.events: deque[dict[str, Any]] = deque(maxlen=EVENT_HISTORY)
         self._partial: dict[str, str] = {}
         self._seq = 0
+        self._last_serial_at = 0.0
         self.generation = 0  # increments on every flash; lines are tagged with it
         self.project: Path | None = None
         self.last_build: dict[str, Any] | None = None
@@ -80,6 +81,7 @@ class DeviceService:
         return event
 
     def _on_serial(self, channel: str, chunk: str) -> None:
+        self._last_serial_at = time.monotonic()
         with self.lock:
             # Drop CR entirely: a "\r\n" split across chunks must not yield an empty line.
             buf = self._partial.get(channel, "") + chunk.replace("\r", "")
@@ -92,6 +94,21 @@ class DeviceService:
                     {"seq": self._seq, "channel": channel, "text": text, "generation": self.generation,
                      "wall": _now(), "virtual_s": round(vtime, 3) if vtime is not None else None}
                 )
+
+    def _wait_serial_quiet(self, quiet_s: float = 0.5, max_wait_s: float = 3.0) -> None:
+        """Wait until serial readers have delivered everything the board produced.
+
+        Reader threads deliver socket bytes asynchronously; under CPU load the last
+        chunk can arrive well after the simulation step returns. The quiet window
+        starts when this is called, so a board that has not produced bytes yet is
+        still given ``quiet_s`` to do so.
+        """
+        start = time.monotonic()
+        deadline = start + max_wait_s
+        while time.monotonic() < deadline:
+            if time.monotonic() - max(self._last_serial_at, start) >= quiet_s:
+                return
+            time.sleep(0.05)
 
     def _pace(self) -> None:
         while not self._stop.is_set():
@@ -186,7 +203,7 @@ class DeviceService:
                 while time.time() < deadline:
                     self.backend.tick()
                     time.sleep(0.05)
-            time.sleep(0.2)  # let socket readers deliver the last bytes
+            self._wait_serial_quiet()
         finally:
             self._paused.clear()
         lines = [entry["text"] for entry in self.serial if entry["generation"] == generation]

@@ -107,7 +107,7 @@ def find_test_python() -> str | None:
     for exe in candidates:
         if not exe or not Path(exe).is_file():
             continue
-        probe = subprocess.run([exe, "-c", "import robot, psutil, yaml"], capture_output=True, check=False)
+        probe = subprocess.run([exe, "-c", "import robot, psutil, yaml"], capture_output=True, stdin=subprocess.DEVNULL, check=False)
         if probe.returncode == 0:
             return exe
     return None
@@ -248,7 +248,7 @@ def simulate(
     if os.name == "nt":
         cmd[2:2] = ["--exclude", "skip_windows"]
     try:
-        proc = subprocess.run(cmd, cwd=out_dir, capture_output=True, text=True, timeout=timeout, check=False)
+        proc = subprocess.run(cmd, cwd=out_dir, capture_output=True, stdin=subprocess.DEVNULL, text=True, timeout=timeout, check=False)
         log = (proc.stdout or "") + (proc.stderr or "")
     except subprocess.TimeoutExpired:
         return SimResult("FAIL", reason=f"simulation timed out after {timeout}s", evidence={"suite": str(suite)})

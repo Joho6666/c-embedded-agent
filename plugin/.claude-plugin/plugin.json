@@ -1,0 +1,7 @@
+{
+  "name": "cea-embedded",
+  "version": "0.1.0",
+  "description": "Embedded firmware tools for agent harnesses: build, one-click flash, live board state (virtual Blue Pill on Renode or a real ST-Link), behaviour verification, and STM32 skills.",
+  "author": { "name": "Joho6666" },
+  "homepage": "https://github.com/Joho6666/c-embedded-agent"
+}

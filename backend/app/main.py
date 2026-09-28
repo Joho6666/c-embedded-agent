@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import json
 import uuid
 from pathlib import Path
@@ -34,7 +35,12 @@ from app.workspace.paths import PathEscapeError, ProtectedPathError
 app = FastAPI(title="C-Embedded Agent API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    # Comma-separated override for running the frontend on another port.
+    allow_origins=[
+        o.strip()
+        for o in os.environ.get("CEA_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+        if o.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

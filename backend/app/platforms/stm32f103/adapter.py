@@ -148,7 +148,9 @@ class Stm32F103Adapter(PlatformAdapter):
         board: str | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> PlatformResult:
-        chosen_board = board or "bluepill_f103c8"
+        # Accept the board id or its display name ("Blue Pill", as the workbench UI sends it).
+        aliases = {"blue pill": "bluepill_f103c8", "bluepill": "bluepill_f103c8", "blue-pill": "bluepill_f103c8"}
+        chosen_board = aliases.get((board or "").strip().lower(), board) or "bluepill_f103c8"
         if chosen_board not in self.descriptor.boards:
             return PlatformResult(status="FAIL", operation="create", adapter_id=self.adapter_id, reason=f"unsupported board: {chosen_board}")
         if not self.template_path.is_dir():

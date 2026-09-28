@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const [bench, setBench] = useState<BenchmarkSummary | null>(null);
   const [memories, setMemories] = useState<ErrorMemoryEntry[]>([]);
   const [tools, setTools] = useState<string>("Not Tested");
+  const [hardware, setHardware] = useState<string>("Not Tested");
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [recentRuns, setRecentRuns] = useState<Array<{ id: string; prompt?: string; status?: string; started_at?: string }>>([]);
 
@@ -46,6 +47,14 @@ export default function DashboardPage() {
         setTools(rows.length ? `${n}/${rows.length} tools` : "Not Tested");
       })
       .catch(() => setTools("Backend capability unavailable"));
+    // Report a probe only when the backend actually detects one.
+    void fetch(`${API_BASE}/api/devices`)
+      .then((r) => (r.ok ? r.json() : { probes: [] }))
+      .then((d: { probes?: Array<{ label: string; presence: string }> }) => {
+        const found = (d.probes ?? []).find((p) => p.presence === "detected");
+        setHardware(found ? `${found.label} connected` : "No probe detected");
+      })
+      .catch(() => setHardware("Unknown"));
   }, [mode]);
 
   return (
@@ -76,7 +85,7 @@ export default function DashboardPage() {
         </div>
         <div className="rounded-md border border-border bg-panel p-3.5">
           <div className="text-[11px] text-muted-foreground">Hardware</div>
-          <div className="mt-1 font-mono text-[18px]">{mode === "live" ? "Probe LIVE" : "Not Tested"}</div>
+          <div className="mt-1 font-mono text-[18px]">{mode === "live" ? hardware : "Not Tested"}</div>
         </div>
         <div className="rounded-md border border-border bg-panel p-3.5">
           <div className="text-[11px] text-muted-foreground">Knowledge</div>

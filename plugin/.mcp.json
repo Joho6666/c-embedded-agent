@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cea-embedded": {
+      "command": "python",
+      "args": ["${CEA_HOME}/scripts/cea_mcp.py"],
+      "env": { "CEA_DEVICE": "auto" }
+    }
+  }
+}

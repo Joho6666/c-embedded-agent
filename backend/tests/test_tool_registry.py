@@ -13,7 +13,7 @@ from app.tools.registry import (
 def test_default_schema_and_registry_have_one_source_per_tool() -> None:
     registry = default_tool_registry()
     names = [spec.name for spec in DEFAULT_TOOL_SPECS]
-    assert len(names) == len(set(names)) == 24
+    assert len(names) == len(set(names)) == 25
     assert [item["function"]["name"] for item in registry.schemas()] == names
 
 

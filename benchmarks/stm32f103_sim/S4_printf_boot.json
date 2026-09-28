@@ -1,0 +1,40 @@
+{
+  "id": "S4",
+  "prompt": "把 printf 重定向到 USART1 115200，上电后先打印一行 CEA:BOOT OK，然后每秒打印一行 tick=<HAL_GetTick() 的值>。",
+  "category": "usart",
+  "platform": "stm32f103-hal",
+  "fixture": "stm32f103_hal_official",
+  "requirements": {
+    "toolchain": "arm-none-eabi-gcc-13.3.1",
+    "hardware": false,
+    "simulator": "renode-1.15"
+  },
+  "environment": {
+    "framework": "HAL",
+    "sdk": "STM32CubeF1-1.1.9",
+    "board": "Blue Pill"
+  },
+  "evidence": [
+    "build",
+    "static-validation",
+    "simulation"
+  ],
+  "oracle": {
+    "must_compile": true,
+    "expected_files": [
+      "Core/Src/main.c"
+    ],
+    "behavior": {
+      "uart": [
+        {
+          "peripheral": "usart1",
+          "expect": "CEA:BOOT OK"
+        },
+        {
+          "peripheral": "usart1",
+          "expect": "tick="
+        }
+      ]
+    }
+  }
+}

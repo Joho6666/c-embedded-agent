@@ -1,0 +1,36 @@
+{
+  "id": "S3",
+  "prompt": "配置 USART1（PA9/PA10）115200 8N1，每 500ms 发送一行 CEA:HELLO（以 \r\n 结尾）。",
+  "category": "usart",
+  "platform": "stm32f103-hal",
+  "fixture": "stm32f103_hal_official",
+  "requirements": {
+    "toolchain": "arm-none-eabi-gcc-13.3.1",
+    "hardware": false,
+    "simulator": "renode-1.15"
+  },
+  "environment": {
+    "framework": "HAL",
+    "sdk": "STM32CubeF1-1.1.9",
+    "board": "Blue Pill"
+  },
+  "evidence": [
+    "build",
+    "static-validation",
+    "simulation"
+  ],
+  "oracle": {
+    "must_compile": true,
+    "expected_files": [
+      "Core/Src/main.c"
+    ],
+    "behavior": {
+      "uart": [
+        {
+          "peripheral": "usart1",
+          "expect": "CEA:HELLO"
+        }
+      ]
+    }
+  }
+}

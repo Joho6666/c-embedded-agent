@@ -311,6 +311,8 @@ def _spec(
 
 _S = {"type": "string"}
 _I = {"type": "integer"}
+_S_REF = {"type": "string"}
+_N_REF = {"type": "number"}
 DEFAULT_TOOL_SPECS = (
     _spec("list_files", "列出工程文件", ToolEffect.READ),
     _spec("read_file", "读取工程内文件", ToolEffect.READ, {"path": _S}, ["path"]),
@@ -318,6 +320,24 @@ DEFAULT_TOOL_SPECS = (
     _spec("apply_patch", "应用 unified diff", ToolEffect.WORKSPACE_WRITE, {"path": _S, "patch": _S}, ["path", "patch"]),
     _spec("search_code", "在工程内搜索字符串", ToolEffect.READ, {"query": _S}, ["query"]),
     _spec("compile_project", "构建工程", ToolEffect.BUILD),
+    _spec(
+        "simulate_firmware",
+        "在仿真器中运行已构建的固件并断言运行行为（LED 闪烁周期、串口输出）。编译通过后用它验证功能，FAIL 时按结果修复。",
+        ToolEffect.BUILD,
+        {
+            "led": {
+                "type": "array",
+                "description": "LED 闪烁断言",
+                "items": {"type": "object", "properties": {"pin": _S_REF, "on_ms": _N_REF, "off_ms": _N_REF}},
+            },
+            "uart": {
+                "type": "array",
+                "description": "串口输出断言",
+                "items": {"type": "object", "properties": {"peripheral": _S_REF, "expect": _S_REF}},
+            },
+        },
+        timeout=300,
+    ),
     _spec("retrieve_knowledge", "检索平台知识库", ToolEffect.READ, {"query": _S}, ["query"]),
     _spec("get_mcu_info", "读取 MCU 信息", ToolEffect.READ),
     _spec("get_pin_info", "查询引脚复用", ToolEffect.READ, {"pin": _S}, ["pin"]),

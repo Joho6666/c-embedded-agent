@@ -1,0 +1,11 @@
+{
+"id": "42",
+"prompt": "USART1 DMA 收发 + 空闲中断，注意与主循环的共享缓冲区 volatile 正确性。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "SAFETY",
+"level": "capability",
+"inject": []
+}

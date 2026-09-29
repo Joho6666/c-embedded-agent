@@ -1,0 +1,19 @@
+{
+"id": "39",
+"prompt": "TIM3 PWM 1kHz 50% 占空比输出到 PA6。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/tim.c"
+],
+"must_compile": true,
+"domain": "COMPILE_REPAIR",
+"level": "capability",
+"inject": [
+{
+"file": "Core/Src/main.c",
+"find": "MX_GPIO_Init();",
+"replace": "MX_GPIO_Init();\n  DEBUG_TriggerFault();",
+"count": 1
+}
+]
+}

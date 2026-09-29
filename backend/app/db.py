@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -143,7 +144,7 @@ CREATE TABLE IF NOT EXISTS os_files (
 """
 
 
-def _db_path() -> Path:
+def db_path() -> Path:
     p = settings.workspace_root
     if not p.is_absolute():
         p = Path.cwd() / p
@@ -151,14 +152,33 @@ def _db_path() -> Path:
     return p / "agent.sqlite"
 
 
+_schema_ready_for: Path | None = None
+_schema_lock = threading.Lock()
+
+
+def _ensure_schema(con: sqlite3.Connection, path: Path) -> None:
+    """Schema + migration run once per database file per process (connect() is hot)."""
+    global _schema_ready_for
+    if _schema_ready_for == path:
+        return
+    with _schema_lock:
+        if _schema_ready_for == path:
+            return
+        con.executescript(SCHEMA)
+        cols = {str(r[1]) for r in con.execute("PRAGMA table_info(runs)").fetchall()}
+        if "task_id" not in cols:
+            con.execute("ALTER TABLE runs ADD COLUMN task_id TEXT")
+        _schema_ready_for = path
+
+
 def connect() -> sqlite3.Connection:
-    con = sqlite3.connect(_db_path())
+    path = db_path()
+    con = sqlite3.connect(path, timeout=5.0)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
-    con.executescript(SCHEMA)
-    cols = {str(r[1]) for r in con.execute("PRAGMA table_info(runs)").fetchall()}
-    if "task_id" not in cols:
-        con.execute("ALTER TABLE runs ADD COLUMN task_id TEXT")
+    con.execute("PRAGMA synchronous=NORMAL")
+    con.execute("PRAGMA busy_timeout=5000")
+    _ensure_schema(con, path)
     return con
 
 

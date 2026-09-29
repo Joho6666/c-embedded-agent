@@ -6,6 +6,15 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+_which_cache: dict[str, str | None] = {}
+
+
+def _which_cached(name: str) -> str | None:
+    """Resolve a tool once per process — the probe runs on every successful build."""
+    if name not in _which_cache:
+        _which_cache[name] = shutil.which(name)
+    return _which_cache[name]
+
 
 def generate_compile_commands(root: Path) -> Path | None:
     makefile = root / "Makefile"
@@ -37,7 +46,7 @@ def generate_compile_commands(root: Path) -> Path | None:
 
 
 def clangd_diagnostics(root: Path) -> dict[str, Any]:
-    exe = shutil.which("clangd")
+    exe = _which_cached("clangd")
     if not exe:
         return {"available": False, "diagnostics": []}
     generate_compile_commands(root)
@@ -62,7 +71,7 @@ def clangd_diagnostics(root: Path) -> dict[str, Any]:
 
 
 def cppcheck_project(root: Path) -> dict[str, Any]:
-    exe = shutil.which("cppcheck")
+    exe = _which_cached("cppcheck")
     if not exe:
         return {"available": False, "diagnostics": []}
     r = subprocess.run(

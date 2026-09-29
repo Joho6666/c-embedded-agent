@@ -1,0 +1,12 @@
+{
+"id": "24",
+"prompt": "PB0 上拉输入按键，按下时 LED 亮，松开灭。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/gpio.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

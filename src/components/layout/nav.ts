@@ -29,6 +29,7 @@ export const navItems: NavItem[] = [
 export const moreNavItems: NavItem[] = [
   { href: "/start", label: "Start Center", icon: MoreHorizontal },
   { href: "/debug", label: "Debug", icon: Bug },
+  { href: "/hardware", label: "Hardware Lab", icon: MoreHorizontal },
   { href: "/tools", label: "工具", icon: MoreHorizontal },
   { href: "/benchmark", label: "Benchmark", icon: MoreHorizontal },
   { href: "/history", label: "历史", icon: MoreHorizontal },

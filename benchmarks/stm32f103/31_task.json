@@ -1,0 +1,11 @@
+{
+"id": "31",
+"prompt": "USART1 DMA 循环模式接收，收到数据原样回发。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

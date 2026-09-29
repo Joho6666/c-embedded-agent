@@ -2,11 +2,13 @@
 """STM32F103 Agent vs baseline benchmark harness."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
 import sys
 import time
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,8 +33,62 @@ def load_tasks() -> list[dict]:
     for p in sorted(TASK_DIR.glob("*.json")):
         if p.name in {"results.json", "latest-summary.json"}:
             continue
-        tasks.append(json.loads(p.read_text(encoding="utf-8")))
+        task = json.loads(p.read_text(encoding="utf-8"))
+        task.setdefault("domain", "PERIPHERAL_CONFIG")
+        task.setdefault("level", "regression")
+        task.setdefault("inject", [])
+        tasks.append(task)
     return tasks
+
+
+def apply_inject(project_root: Path, injects: list[dict]) -> list[str]:
+    """Apply injected faults (COMPILE_REPAIR / DEBUGGING tasks). Returns notes."""
+    applied = []
+    for spec in injects or []:
+        try:
+            f = project_root / spec["file"]
+            if not f.is_file():
+                continue
+            text = f.read_text(encoding="utf-8")
+            if spec["find"] not in text:
+                continue
+            n = int(spec.get("count", 1))
+            text = text.replace(spec["find"], spec["replace"], n)
+            f.write_text(text, encoding="utf-8")
+            applied.append(f"{spec['file']}:{spec['find'][:30]}")
+        except (OSError, KeyError):
+            continue
+    return applied
+
+
+def domain_rates(tasks: list[dict]) -> dict:
+    out: dict[str, dict] = {}
+    for t in tasks:
+        dom = t.get("domain") or "unknown"
+        bucket = out.setdefault(dom, {"tasks": 0, "compile": 0, "semantic": 0})
+        bucket["tasks"] += 1
+        if t.get("success"):
+            bucket["compile"] += 1
+        if t.get("semantic_ok"):
+            bucket["semantic"] += 1
+    for dom, b in out.items():
+        n = max(b["tasks"], 1)
+        b["compileSuccess"] = round(b["compile"] / n, 4)
+        b["semanticSuccess"] = round(b["semantic"] / n, 4)
+    return out
+
+
+def level_rates(tasks: list[dict]) -> dict:
+    out = {}
+    for lvl in ("regression", "capability"):
+        sub = [t for t in tasks if t.get("level") == lvl]
+        n = max(len(sub), 1)
+        out[lvl] = {
+            "tasks": len(sub),
+            "compileSuccess": round(sum(1 for t in sub if t.get("success")) / n, 4),
+            "semanticSuccess": round(sum(1 for t in sub if t.get("semantic_ok")) / n, 4),
+        }
+    return out
 
 
 def run_build(project_root: Path) -> dict:
@@ -51,26 +107,35 @@ def semantic_ok(project_root: Path, prompt: str) -> bool:
     return bool(r.get("passed")) or float(r.get("score") or 0) >= 0.8
 
 
-def baseline_write(project_root: Path, prompt: str) -> dict:
+def agent_semantic_ok(run_events: list[dict]) -> bool | None:
+    """Reuse the validation the agent already computed (None → caller must recompute)."""
+    for e in reversed(run_events):
+        if e.get("type") != "validation":
+            continue
+        try:
+            desc = json.loads(e.get("description") or "{}")
+            s = desc.get("semantic") or {}
+            return bool(s.get("passed")) or float(s.get("score") or 0) >= 0.8
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+async def baseline_write(project_root: Path, prompt: str) -> dict:
     """LLM dumps code with no tools — comparison only."""
     from app.services.llm import LLMError, chat
-    import asyncio
 
-    async def _go() -> tuple[str, dict]:
+    try:
         data = await chat(
             [
                 {"role": "system", "content": "只输出完整 main.c，不要解释。不要使用知识库、Skill、Error Memory 或编译修复循环。"},
                 {"role": "user", "content": prompt},
             ]
         )
-        text = data["choices"][0]["message"].get("content") or ""
-        usage = data.get("usage") or {}
-        return text, usage
-
-    try:
-        text, usage = asyncio.run(_go())
     except LLMError as e:
         return {"ok": False, "error": str(e), "input_tokens": 0, "output_tokens": 0}
+    text = data["choices"][0]["message"].get("content") or ""
+    usage = data.get("usage") or {}
     main = project_root / "Core" / "Src" / "main.c"
     if "```" in text:
         text = text.split("```")[1]
@@ -153,54 +218,64 @@ def main() -> int:
         print("SKIP: LLM not configured — template compile recorded only")
         return 0
 
+    from app.agent.runtime import RUNS, AgentRun, run_agent
+    from app.services.llm import close_client
     from app.workspace.manager import create_project, project_root
-    from app.agent.runtime import AgentRun, run_agent
-    import asyncio
-    import uuid
 
-    iterations = []
-    latencies = []
-    in_tokens = 0
-    out_tokens = 0
-    baseline_compile = 0
-    baseline_valid = 0
-    baseline_tokens = 0
-    baseline_latency = 0.0
-    agent_compile = 0
-    agent_valid = 0
+    results_path = TASK_DIR / "results.json"
+    parallel = max(1, int(os.environ.get("BENCH_PARALLEL") or "1"))
+    stats = {
+        "iterations": [],
+        "latencies": [],
+        "in_tokens": 0,
+        "out_tokens": 0,
+        "baseline_compile": 0,
+        "baseline_valid": 0,
+        "baseline_tokens": 0,
+        "baseline_latency": 0.0,
+        "agent_compile": 0,
+        "agent_valid": 0,
+    }
 
-    for task in tasks:
+    async def _run_task(task: dict) -> None:
         prompt = task["prompt"]
         # --- Baseline: prompt → write main.c → build (no knowledge/skills/error memory/fix loop)
         b0 = time.perf_counter()
         bmeta = create_project(f"base-{task.get('id', 'bench')}")
         broot = project_root(bmeta["id"])
-        bw = baseline_write(broot, prompt)
+        bw = await baseline_write(broot, prompt)
         b_build = run_build(broot) if bw.get("ok") else {"success": False}
         b_sec = time.perf_counter() - b0
         b_ok = bool(b_build.get("success"))
         b_sem = semantic_ok(broot, prompt) if b_ok else False
-        baseline_tokens += int(bw.get("input_tokens") or 0) + int(bw.get("output_tokens") or 0)
-        baseline_latency += b_sec
+        stats["baseline_tokens"] += int(bw.get("input_tokens") or 0) + int(bw.get("output_tokens") or 0)
+        stats["baseline_latency"] += b_sec
         if b_ok:
-            baseline_compile += 1
+            stats["baseline_compile"] += 1
         if b_sem:
-            baseline_valid += 1
+            stats["baseline_valid"] += 1
 
         # --- Agent
         t0 = time.perf_counter()
         meta = create_project(task.get("id", "bench"))
         root = project_root(meta["id"])
+        injected = apply_inject(root, task.get("inject") or [])
         rid = f"run-{uuid.uuid4().hex[:8]}"
         run = AgentRun(rid, meta["id"], prompt, "auto")
-        asyncio.run(run_agent(run))
+        await run_agent(run)
+        RUNS.pop(rid, None)
         first = next((e for e in run.events if e.get("type") == "compile"), None)
         last_ok = run.status == "success"
-        sem = semantic_ok(root, prompt) if last_ok else False
+        sem = agent_semantic_ok(run.events)
+        if sem is None:
+            sem = semantic_ok(root, prompt) if last_ok else False
         seconds = round(time.perf_counter() - t0, 2)
         item = {
             "id": task.get("id"),
             "prompt": prompt,
+            "domain": task.get("domain"),
+            "level": task.get("level"),
+            "injected": injected,
             "status": run.status,
             "iterations": run.iteration,
             "first_build_ok": bool(first and first.get("status") == "success"),
@@ -214,28 +289,81 @@ def main() -> int:
             "baseline_seconds": round(b_sec, 2),
         }
         out["tasks"].append(item)
-        iterations.append(run.iteration)
-        latencies.append(seconds)
-        in_tokens += run.input_tokens
-        out_tokens += run.output_tokens
+        stats["iterations"].append(run.iteration)
+        stats["latencies"].append(seconds)
+        stats["in_tokens"] += run.input_tokens
+        stats["out_tokens"] += run.output_tokens
         if item["first_build_ok"]:
             out["first_build_success"] += 1
         if last_ok:
             out["compile_success"] += 1
-            agent_compile += 1
+            stats["agent_compile"] += 1
             if not item["first_build_ok"]:
                 out["auto_fix_success"] += 1
         if sem:
             out["semantic_success"] += 1
-            agent_valid += 1
+            stats["agent_valid"] += 1
+
+        # --- Outcome Memory: one row per real run (never written without one)
+        try:
+            from app.tools.outcome_memory import record_outcome
+
+            record_outcome(
+                run_id=rid,
+                task_id=str(task.get("id") or ""),
+                task_type="benchmark",
+                domain=task.get("domain"),
+                model=model or None,
+                attempts=max(1, run.iteration),
+                repair_count=max(0, run.iteration - 1) if not item["first_build_ok"] and last_ok else 0,
+                input_tokens=run.input_tokens,
+                output_tokens=run.output_tokens,
+                elapsed_s=seconds,
+                build_success=last_ok,
+                simulation_success=False,
+                hardware_success=False,  # benchmark runs are compile/semantic only
+                detail={"semantic_ok": sem, "injected": injected, "baseline_success": b_ok},
+            )
+        except Exception as e:  # noqa: BLE001 — recording must not break the bench
+            out.setdefault("outcome_memory_errors", []).append(str(e))
+        write_json(results_path, out)  # incremental: a crash mid-run keeps finished tasks
         print(item)
+
+    async def _run_all() -> None:
+        try:
+            if parallel <= 1:
+                for task in tasks:
+                    await _run_task(task)
+            else:
+                sem = asyncio.Semaphore(parallel)
+
+                async def _one(t: dict) -> None:
+                    async with sem:
+                        await _run_task(t)
+
+                await asyncio.gather(*(_one(t) for t in tasks))
+        finally:
+            await close_client()
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_run_all())
+    finally:
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
 
     n = max(len(tasks), 1)
     out["first_build_success_rate"] = out["first_build_success"] / n
     out["compile_success_rate"] = out["compile_success"] / n
     out["auto_fix_success_rate"] = out["auto_fix_success"] / n
     out["semantic_success_rate"] = out["semantic_success"] / n
-    out["avg_iterations"] = sum(iterations) / max(len(iterations), 1)
+    out["avg_iterations"] = sum(stats["iterations"]) / max(len(stats["iterations"]), 1)
+    out["domainRates"] = domain_rates(out["tasks"])
+    out["levelRates"] = level_rates(out["tasks"])
     write_json(TASK_DIR / "results.json", out)
 
     summary = {
@@ -246,9 +374,11 @@ def main() -> int:
         "autoFixSuccess": out["auto_fix_success"] / n,
         "semanticValidation": out["semantic_success"] / n,
         "avgIterations": out["avg_iterations"],
-        "avgLatency": sum(latencies) / max(len(latencies), 1),
-        "inputTokens": in_tokens,
-        "outputTokens": out_tokens,
+        "avgLatency": sum(stats["latencies"]) / max(len(stats["latencies"]), 1),
+        "inputTokens": stats["in_tokens"],
+        "outputTokens": stats["out_tokens"],
+        "domainRates": out["domainRates"],
+        "levelRates": out["levelRates"],
         "gcc": True,
         "llm": True,
         "skipped": [],
@@ -258,16 +388,16 @@ def main() -> int:
     comparison = {
         "tasks": len(tasks),
         "model": model,
-        "baselineCompileSuccess": baseline_compile / n,
-        "agentCompileSuccess": agent_compile / n,
-        "baselineValidation": baseline_valid / n,
-        "agentValidation": agent_valid / n,
-        "baselineTokens": baseline_tokens,
-        "agentTokens": in_tokens + out_tokens,
-        "baselineLatency": baseline_latency / n,
-        "agentLatency": sum(latencies) / n,
-        "improvementCompile": (agent_compile - baseline_compile) / n,
-        "improvementValidation": (agent_valid - baseline_valid) / n,
+        "baselineCompileSuccess": stats["baseline_compile"] / n,
+        "agentCompileSuccess": stats["agent_compile"] / n,
+        "baselineValidation": stats["baseline_valid"] / n,
+        "agentValidation": stats["agent_valid"] / n,
+        "baselineTokens": stats["baseline_tokens"],
+        "agentTokens": stats["in_tokens"] + stats["out_tokens"],
+        "baselineLatency": stats["baseline_latency"] / n,
+        "agentLatency": sum(stats["latencies"]) / n,
+        "improvementCompile": (stats["agent_compile"] - stats["baseline_compile"]) / n,
+        "improvementValidation": (stats["agent_valid"] - stats["baseline_valid"]) / n,
         "skipped": [],
     }
     write_json(comparison_path, comparison)

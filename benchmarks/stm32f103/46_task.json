@@ -1,0 +1,12 @@
+{
+"id": "46",
+"prompt": "按 Blue Pill 板卡定义配置板载 LED 引脚并 250ms 快闪，同时输出时钟配置说明到注释。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/gpio.c"
+],
+"must_compile": true,
+"domain": "CONTEXT",
+"level": "capability",
+"inject": []
+}

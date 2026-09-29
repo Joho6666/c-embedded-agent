@@ -1,0 +1,11 @@
+{
+"id": "41",
+"prompt": "EXTI 按键中断置标志，主循环查询标志处理，不得在中断里延时。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "SAFETY",
+"level": "capability",
+"inject": []
+}

@@ -235,6 +235,40 @@ def ensure_schema() -> None:
               last_seen TEXT
             )"""
         )
+        # v0.10 Error Memory v2 — additive, idempotent columns.
+        # Statements are hardcoded constants; no user input ever reaches SQL.
+        try:
+            con.execute("ALTER TABLE error_memories ADD COLUMN platform TEXT")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE error_memories ADD COLUMN toolchain TEXT")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE error_memories ADD COLUMN phase TEXT")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE error_memories ADD COLUMN error_class TEXT")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE error_memories ADD COLUMN symptoms TEXT")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE error_memories ADD COLUMN verified_count INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE error_memories ADD COLUMN failed_count INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE error_memories ADD COLUMN hardware_verified_count INTEGER DEFAULT 0")
+        except Exception:
+            pass
         for t in TEMPLATES:
             con.execute(
                 """INSERT OR IGNORE INTO error_memories
@@ -264,6 +298,12 @@ def _row(r: Any) -> dict[str, Any]:
     rate = None
     if occ > 0:
         rate = ok / occ
+    verified = int(r["verified_count"] or 0) if "verified_count" in r.keys() else 0
+    failed = int(r["failed_count"] or 0) if "failed_count" in r.keys() else 0
+    hardware_verified = int(r["hardware_verified_count"] or 0) if "hardware_verified_count" in r.keys() else 0
+    confidence = None
+    if verified or hardware_verified:
+        confidence = round(hardware_verified / max(verified + hardware_verified, 1), 4)
     return {
         "id": r["id"],
         "pattern": r["pattern"],
@@ -280,6 +320,10 @@ def _row(r: Any) -> dict[str, Any]:
         "successRate": rate,
         "successfulRuns": ok,
         "failedRuns": fail,
+        "verifiedCount": verified,
+        "failedCount": failed,
+        "hardwareVerifiedCount": hardware_verified,
+        "confidence": confidence,
         "lastSeen": r["last_seen"],
     }
 
@@ -348,19 +392,26 @@ def record_from_output(output: str, *, success: bool) -> list[str]:
     return hits
 
 
-def mark_fix_result(eid: str, *, success: bool) -> None:
+def mark_fix_result(eid: str, *, success: bool, hardware_pass: bool = False) -> None:
+    """v2: verified_count counts compile-verified fixes; hardware_verified_count
+    only increases with real hardware evidence (pipeline status PASS)."""
     ensure_schema()
     with connect() as con:
         if success:
             con.execute(
-                """UPDATE error_memories SET occurrences=occurrences+1, successful_runs=successful_runs+1, last_seen=?
-                   WHERE id=?""",
+                """UPDATE error_memories SET occurrences=occurrences+1, successful_runs=successful_runs+1,
+                   verified_count=verified_count+1, last_seen=? WHERE id=?""",
                 (now(), eid),
             )
+            if hardware_pass:
+                con.execute(
+                    "UPDATE error_memories SET hardware_verified_count=hardware_verified_count+1 WHERE id=?",
+                    (eid,),
+                )
         else:
             con.execute(
-                """UPDATE error_memories SET occurrences=occurrences+1, failed_runs=failed_runs+1, last_seen=?
-                   WHERE id=?""",
+                """UPDATE error_memories SET occurrences=occurrences+1, failed_runs=failed_runs+1,
+                   failed_count=failed_count+1, last_seen=? WHERE id=?""",
                 (now(), eid),
             )
 
@@ -418,6 +469,30 @@ def _dedupe_makefile_sources(makefile: str) -> str:
     return "".join(out)
 
 
+_DMA_CHANNEL_RE = re.compile(r"^DMA1_Channel\d+$")
+
+
+def _find_dma_handle(root: Path, channel: str) -> str | None:
+    """Find the DMA_HandleTypeDef bound to `channel` in Core/Src (e.g. hdma_usart1_rx).
+
+    Golden recipes write `hdma_x.Instance = DMA1_ChannelN;` — without that handle
+    an IRQ stub cannot clear the interrupt flag and would storm on real hardware.
+    """
+    src = root / "Core" / "Src"
+    if not src.is_dir():
+        return None
+    pat = re.compile(r"(hdma_[A-Za-z0-9_]+)\.Instance\s*=\s*" + re.escape(channel) + r"\b")
+    for p in sorted(src.glob("*.c")):
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = pat.search(text)
+        if m:
+            return m.group(1)
+    return None
+
+
 def _ensure_irq_handler(root: Path, irq: str) -> dict[str, Any]:
     rel = "Core/Src/stm32f1xx_it.c"
     try:
@@ -427,12 +502,22 @@ def _ensure_irq_handler(root: Path, irq: str) -> dict[str, Any]:
     name = "DMA1_Channel5_IRQHandler" if irq in {"DMA1_Channel5", "auto"} else irq
     if name in text:
         return {"applied": False, "reason": f"{name} already present", "files": []}
-    stub = (
-        f"\nvoid {name}(void)\n"
-        "{\n"
-        "  /* known-fix stub: call matching HAL IRQ if handle exists in this translation unit */\n"
-        "}\n"
-    )
+    channel = name[: -len("_IRQHandler")]
+    extern = ""
+    body = "  /* known-fix stub: handler body must clear its interrupt source */\n"
+    note = f"added {name}"
+    if _DMA_CHANNEL_RE.match(channel):
+        handle = _find_dma_handle(root, channel)
+        if not handle:
+            return {
+                "applied": False,
+                "reason": f"no DMA handle bound to {channel} found in Core/Src — manual fix required",
+                "files": [],
+            }
+        extern = f"extern DMA_HandleTypeDef {handle};\n\n"
+        body = f"  HAL_DMA_IRQHandler(&{handle});\n"
+        note = f"added {name} calling HAL_DMA_IRQHandler(&{handle})"
+    stub = f"\n{extern}void {name}(void)\n{{\n{body}}}\n"
     write_file(root, rel, text.rstrip() + stub + "\n")
     hdr = "Core/Inc/stm32f1xx_it.h"
     try:
@@ -441,4 +526,4 @@ def _ensure_irq_handler(root: Path, irq: str) -> dict[str, Any]:
             write_file(root, hdr, h.replace("#ifdef __cplusplus", f"void {name}(void);\n#ifdef __cplusplus", 1) if "#ifdef __cplusplus" in h else h + f"\nvoid {name}(void);\n")
     except FileNotFoundError:
         pass
-    return {"applied": True, "files": [rel], "notes": [f"added {name}"]}
+    return {"applied": True, "files": [rel], "notes": [note]}

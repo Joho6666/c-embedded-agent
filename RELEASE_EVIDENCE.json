@@ -1,0 +1,157 @@
+{
+  "generatedAt": "2026-09-06T03:39:43+00:00",
+  "version": "0.10.0-beta",
+  "commit": "7fd46b8008a6cda1fd1050c000c5b03249719a58",
+  "host": "Windows-10-10.0.26200-SP0",
+  "python": "3.11.15",
+  "toolchain": {
+    "arm-none-eabi-gcc": "arm-none-eabi-gcc (xPack GNU Arm Embedded GCC x86_64) 13.3.1 20240614",
+    "make": "GNU Make 4.4.1",
+    "openocd": null,
+    "st-info": null,
+    "cppcheck": null,
+    "clangd": null,
+    "arm-none-eabi-gdb": "C:\\Users\\JOHO\\tools\\xpack-arm-none-eabi-gcc-13.3.1-1.1\\bin\\arm-none-eabi-gdb.EXE",
+    "renode": "C:\\Users\\JOHO\\tools\\renode-portable\\renode_1.15.3\\bin\\Renode.exe"
+  },
+  "platformCapabilities": {
+    "rule": "VERIFIED requires committed evidence on this host; code-path-exists is UNVERIFIED, never VERIFIED",
+    "generatedAt": null,
+    "platforms": {
+      "stm32": {
+        "BUILD": "VERIFIED",
+        "FLASH": "UNVERIFIED",
+        "DEBUG": "UNVERIFIED",
+        "SERIAL": "UNVERIFIED",
+        "SIMULATE": "VERIFIED",
+        "HARDWARE_VALIDATE": "UNVERIFIED"
+      },
+      "esp32": {
+        "BUILD": "NOT_SUPPORTED",
+        "FLASH": "NOT_SUPPORTED",
+        "DEBUG": "NOT_SUPPORTED",
+        "SERIAL": "NOT_SUPPORTED",
+        "SIMULATE": "NOT_SUPPORTED",
+        "HARDWARE_VALIDATE": "NOT_SUPPORTED"
+      },
+      "c51": {
+        "BUILD": "NOT_SUPPORTED",
+        "FLASH": "NOT_SUPPORTED",
+        "DEBUG": "NOT_SUPPORTED",
+        "SERIAL": "NOT_SUPPORTED",
+        "SIMULATE": "NOT_SUPPORTED",
+        "HARDWARE_VALIDATE": "NOT_SUPPORTED"
+      },
+      "rp2040": {
+        "BUILD": "NOT_SUPPORTED",
+        "FLASH": "NOT_SUPPORTED",
+        "DEBUG": "NOT_SUPPORTED",
+        "SERIAL": "NOT_SUPPORTED",
+        "SIMULATE": "NOT_SUPPORTED",
+        "HARDWARE_VALIDATE": "NOT_SUPPORTED"
+      },
+      "host-c": {
+        "BUILD": "NOT_SUPPORTED",
+        "FLASH": "NOT_SUPPORTED",
+        "DEBUG": "NOT_SUPPORTED",
+        "SERIAL": "NOT_SUPPORTED",
+        "SIMULATE": "NOT_SUPPORTED",
+        "HARDWARE_VALIDATE": "NOT_SUPPORTED"
+      }
+    }
+  },
+  "goldenBuilds": {
+    "stm32f103_adc": {
+      "elfPresent": true,
+      "elfBytes": 148052
+    },
+    "stm32f103_adc_dma": {
+      "elfPresent": true,
+      "elfBytes": 100340
+    },
+    "stm32f103_exti": {
+      "elfPresent": true,
+      "elfBytes": 55324
+    },
+    "stm32f103_i2c": {
+      "elfPresent": true,
+      "elfBytes": 112028
+    },
+    "stm32f103_led": {
+      "elfPresent": true,
+      "elfBytes": 54020
+    },
+    "stm32f103_pwm": {
+      "elfPresent": true,
+      "elfBytes": 115208
+    },
+    "stm32f103_spi": {
+      "elfPresent": true,
+      "elfBytes": 85800
+    },
+    "stm32f103_tim_interrupt": {
+      "elfPresent": true,
+      "elfBytes": 135512
+    },
+    "stm32f103_usart": {
+      "elfPresent": true,
+      "elfBytes": 106716
+    },
+    "stm32f103_usart_dma": {
+      "elfPresent": true,
+      "elfBytes": 122608
+    },
+    "stm32f103_usart_it": {
+      "elfPresent": true,
+      "elfBytes": 121616
+    }
+  },
+  "benchmark": {
+    "model": "",
+    "tasks": 0,
+    "firstBuildSuccess": 0.0,
+    "finalCompileSuccess": 0.0,
+    "autoFixSuccess": 0.0,
+    "semanticValidation": 0.0,
+    "avgIterations": 0.0,
+    "avgLatency": 0.0,
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "gcc": true,
+    "llm": false,
+    "skipped": [
+      "LLM not configured"
+    ],
+    "status": "SKIPPED"
+  },
+  "tests": {
+    "status": "PASS",
+    "exitCode": 0,
+    "summary": [
+      "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+      "208 passed, 1 skipped, 1 warning in 82.76s (0:01:22)"
+    ]
+  },
+  "hardware": {
+    "runFiles": 0,
+    "note": "hardware execution requires the lab fixture; absent probes = NOT_TESTED by design",
+    "stlinkProbe": {
+      "id": "stlink",
+      "name": "st-info",
+      "installed": false,
+      "version": null,
+      "connected": false,
+      "detail": null
+    }
+  },
+  "spikes": {
+    "renode": "SUPPORTED (docs/RENODE_SPIKE.md \u2014 real run)",
+    "esp32": "NOT_RUN (docs/ESP32_SIM_SPIKE.md \u2014 ESP-IDF absent)"
+  },
+  "knownLimits": [
+    "STM32F103 HAL only \u2014 ESP32/C51/RP2040/Host C have no backend adapter",
+    "Hardware execution NOT_TESTED on hosts without a probe (honest UNAVAILABLE)",
+    "Agent vs Baseline requires a configured LLM; benchmark records skip reasons otherwise",
+    "Flash/debug verified only up to code-path + unit tests until a live probe session is recorded"
+  ]
+}

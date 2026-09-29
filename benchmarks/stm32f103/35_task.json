@@ -1,0 +1,11 @@
+{
+"id": "35",
+"prompt": "按键 EXTI 触发 LED 翻转，同时 USART1 输出按键次数。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "LONG_HORIZON",
+"level": "capability",
+"inject": []
+}

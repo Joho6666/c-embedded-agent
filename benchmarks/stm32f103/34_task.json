@@ -1,0 +1,11 @@
+{
+"id": "34",
+"prompt": "PWM 呼吸灯：TIM3 PA6 输出，占空比 0→100→0% 循环，周期 2 秒。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "LONG_HORIZON",
+"level": "capability",
+"inject": []
+}

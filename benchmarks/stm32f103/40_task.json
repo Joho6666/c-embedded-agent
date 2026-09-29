@@ -1,0 +1,11 @@
+{
+"id": "40",
+"prompt": "USART1 中断接收每字节并立即在 ISR 中处理协议解析（注意中断安全）。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "SAFETY",
+"level": "capability",
+"inject": []
+}

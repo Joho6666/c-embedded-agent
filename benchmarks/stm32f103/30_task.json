@@ -1,0 +1,11 @@
+{
+"id": "30",
+"prompt": "PB1 下降沿 EXTI 中断，中断中翻转 LED。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

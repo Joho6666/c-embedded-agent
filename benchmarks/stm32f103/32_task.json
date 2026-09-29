@@ -1,0 +1,11 @@
+{
+"id": "32",
+"prompt": "ADC1 DMA 扫描两通道到缓冲区，TIM2 1Hz 触发 USART1 输出。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

@@ -1,0 +1,11 @@
+{
+"id": "29",
+"prompt": "SPI1 主模式发送 0x55 并用 MISO 回环接收验证。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

@@ -1,0 +1,11 @@
+{
+"id": "27",
+"prompt": "ADC1 双通道轮询采样 PA1/PA2， USART1 输出两路数值。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

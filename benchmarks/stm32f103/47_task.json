@@ -1,0 +1,11 @@
+{
+"id": "47",
+"prompt": "同时实现：LED 500ms 闪烁、USART1 输出、ADC1 PA1 采样，三者互不阻塞。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "LONG_HORIZON",
+"level": "capability",
+"inject": []
+}

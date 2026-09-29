@@ -1,0 +1,11 @@
+{
+"id": "22",
+"prompt": "USART1 printf 重定向，上电输出 CEA:USART:PASS。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

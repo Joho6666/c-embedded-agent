@@ -1,0 +1,19 @@
+{
+"id": "37",
+"prompt": "Blue Pill 板载 LED 每 500ms 闪烁。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/gpio.c"
+],
+"must_compile": true,
+"domain": "COMPILE_REPAIR",
+"level": "capability",
+"inject": [
+{
+"file": "Core/Src/main.c",
+"find": "LED_Pin",
+"replace": "GPIO_PIN_99",
+"count": 1
+}
+]
+}

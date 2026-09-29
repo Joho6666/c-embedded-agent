@@ -34,6 +34,14 @@ from app.tools.serialutil import read_available, status as serial_status
 from app.tools.skills import benchmark_wrap, get_skill, list_skills
 from app.tools.hw_session import load_session, save_session
 from app.tools.project_scan import import_existing_project
+from app.hardware.devices import delete_device, load_devices, refresh_from_discovery, upsert_device
+from app.hardware.discovery import discover as hardware_discover, load_report, save_report
+from app.hardware.hardware_map import load_hardware_map
+from app.hardware.debug_workflow import diagnose_no_output
+from app.hardware.session import load_run as load_hardware_run
+from app.hardware.session import load_runs as load_hardware_runs
+from app.hardware.simulation import list_adapters as list_simulation_adapters
+from app.hardware.simulation import get_adapter as get_simulation_adapter
 from app.validation import validate_project
 from app.workspace.manager import create_project, list_projects, project_root
 from app.workspace.paths import PathEscapeError, ProtectedPathError
@@ -117,6 +125,20 @@ class HardwareSessionBody(BaseModel):
     mcu: str | None = None
 
 
+class HardwareDeviceBody(BaseModel):
+    model_config = {"extra": "allow"}
+
+    id: str
+
+
+class SimulationRunBody(BaseModel):
+    projectId: str
+    adapter: str = "renode"
+    platform: str | None = None
+    expect: str = "CEA:SIM:PASS"
+    timeout_s: float = 30.0
+
+
 def _version_payload() -> dict[str, Any]:
     root = settings.repo_root
     app_ver = "0.8.0-beta"
@@ -175,9 +197,31 @@ def skill_get(skill_id: str) -> dict[str, Any]:
     return item
 
 
+@app.get("/api/platforms")
+def platforms() -> dict[str, Any]:
+    """Evidence-derived platform capability matrix (source of truth)."""
+    from app.core.capabilities import platform_capabilities
+
+    return {"platforms": platform_capabilities()}
+
+
+@app.get("/api/approvals/policy")
+def approvals_policy() -> dict[str, Any]:
+    from app.core.approvals import policy
+
+    return policy()
+
+
 @app.get("/api/memory/errors")
 def memory_errors(q: str = "", tag: str = "") -> list[dict[str, Any]]:
     return list_errors(q, tag)
+
+
+@app.get("/api/memory/outcomes")
+def memory_outcomes(domain: str = "") -> dict[str, Any]:
+    from app.tools.outcome_memory import list_outcomes, summary
+
+    return {"summary": summary(), "outcomes": list_outcomes(domain or None)}
 
 
 @app.get("/api/memory/errors/{eid}")
@@ -246,6 +290,116 @@ def hardware_auto_debug(body: HardwareRunBody) -> dict[str, Any]:
     except FileNotFoundError:
         raise HTTPException(404, "project not found") from None
     return auto_debug(root, serial_device=body.serialDevice, baud=body.baud, expect=body.expect)
+
+
+@app.post("/api/hardware/debugger/diagnose")
+def hardware_debugger_diagnose(body: HardwareRunBody) -> dict[str, Any]:
+    """Live debugger workflow: build → flash → reset → serial → halt → fault decode."""
+    try:
+        root = project_root(body.projectId)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    serial_wait = None
+    if body.serialDevice:
+        from app.tools import serialutil
+
+        def serial_wait(seconds: float) -> list[str]:
+            serialutil.connect(body.serialDevice, body.baud)
+            try:
+                return serialutil.wait_for(expect=body.expect, max_s=seconds, quiet=0.3)
+            finally:
+                serialutil.disconnect()
+
+    try:
+        return diagnose_no_output(root, serial_wait=serial_wait, task=body.task)
+    except (ValueError, RuntimeError, OSError) as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.get("/api/hardware/devices")
+def hardware_devices_list() -> list[dict[str, Any]]:
+    return load_devices()
+
+
+@app.post("/api/hardware/devices")
+def hardware_devices_upsert(body: HardwareDeviceBody) -> dict[str, Any]:
+    try:
+        return upsert_device(body.model_dump())
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.delete("/api/hardware/devices/{device_id}")
+def hardware_devices_delete(device_id: str) -> dict[str, str]:
+    if not delete_device(device_id):
+        raise HTTPException(404, "device not found")
+    return {"ok": "1"}
+
+
+@app.post("/api/hardware/discovery")
+def hardware_discovery_run() -> dict[str, Any]:
+    report = hardware_discover()
+    save_report(report)
+    refresh_from_discovery(report)
+    return report
+
+
+@app.get("/api/hardware/discovery-report")
+def hardware_discovery_report() -> dict[str, Any]:
+    report = load_report()
+    if report is None:
+        report = hardware_discover()
+        save_report(report)
+        refresh_from_discovery(report)
+    return report
+
+
+@app.get("/api/hardware/map")
+def hardware_map() -> dict[str, Any]:
+    return load_hardware_map()
+
+
+@app.get("/api/simulation/adapters")
+def simulation_adapters() -> list[dict[str, Any]]:
+    return list_simulation_adapters()
+
+
+@app.post("/api/simulation/run")
+def simulation_run(body: SimulationRunBody) -> dict[str, Any]:
+    try:
+        root = project_root(body.projectId)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    elf = root / "firmware.elf"
+    if not elf.is_file():
+        raise HTTPException(400, "firmware.elf is missing — build before simulation")
+    try:
+        adapter = get_simulation_adapter(body.adapter)
+    except KeyError as e:
+        raise HTTPException(400, str(e)) from None
+    result = adapter.run(str(elf), platform=body.platform, expect=body.expect or None, timeout_s=body.timeout_s)
+    return result
+
+
+@app.get("/api/projects/{project_id}/hardware-runs")
+def hardware_runs_list(project_id: str) -> list[dict[str, Any]]:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    return load_hardware_runs(root)
+
+
+@app.get("/api/projects/{project_id}/hardware-runs/{run_id}")
+def hardware_run_get(project_id: str, run_id: str) -> dict[str, Any]:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    run = load_hardware_run(root, run_id)
+    if not run:
+        raise HTTPException(404, "hardware run not found")
+    return run
 
 
 @app.get("/api/validation")
@@ -424,6 +578,30 @@ def artifacts(project_id: str) -> list[dict[str, Any]]:
         if p.is_file():
             out.append({"name": name, "size": p.stat().st_size})
     return out
+
+
+@app.get("/api/projects/{project_id}/artifacts/analysis")
+def artifacts_analysis(project_id: str) -> dict[str, Any]:
+    """Sections, largest symbols, flash/RAM budget gates."""
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    from app.tools.artifacts import analyze_artifacts
+
+    return analyze_artifacts(root)
+
+
+@app.get("/api/projects/{project_id}/lint")
+def lint_get(project_id: str) -> dict[str, Any]:
+    """Deterministic embedded lint (StaticFinding list)."""
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "project not found") from None
+    from app.validation.lint import lint_project
+
+    return lint_project(root)
 
 
 @app.get("/api/projects/{project_id}/artifacts/{name}")

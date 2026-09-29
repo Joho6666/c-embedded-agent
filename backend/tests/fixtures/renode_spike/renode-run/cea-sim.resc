@@ -1,0 +1,6 @@
+using sysbus
+mach create "cea-sim"
+machine LoadPlatformDescription @platforms/cpus/stm32f103.repl
+sysbus.usart1 CreateFileBackend @C:/Users/JOHO/.zcode/workspace/default/backend/tests/fixtures/renode_spike/renode-run/uart.log
+sysbus LoadELF @C:/Users/JOHO/.zcode/workspace/default/backend/tests/fixtures/renode_spike/sim_uart.elf
+start

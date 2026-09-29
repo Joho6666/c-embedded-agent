@@ -7,3 +7,20 @@ button: none
 uart: USART1
 uart_tx: PA9
 uart_rx: PA10
+
+# v0.10 BoardProfile v2 — flat keys (parser-safe); sources documented below
+debug_probe: ST-Link
+flash_runner: openocd
+datasheet: RM0008 (STM32F10x Reference Manual, ST)
+programming_manual: PM0075 (STM32F1 Flash programming)
+schematic_source: Blue Pill community schematic (unofficial board; MCU section per RM0008)
+i2c1_scl: PB6
+i2c1_sda: PB7
+spi1_sck: PA5
+spi1_miso: PA6
+spi1_mosi: PA7
+adc1_in1: PA1
+tim2_ch1: PA0
+tim3_ch1: PA6
+reserved: SWDIO=PA13 SWCLK=PA14 OSC_IN=PD0 OSC_OUT=PD1
+pinAliases: LED=PC13 USER_UART=USART1

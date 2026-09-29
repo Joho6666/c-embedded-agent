@@ -1,0 +1,12 @@
+{
+"id": "49",
+"prompt": "USART1 中断接收实现回显，USART2 每 1s 输出心跳 CEA:USART:PASS。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/usart.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

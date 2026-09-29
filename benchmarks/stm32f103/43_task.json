@@ -1,0 +1,18 @@
+{
+"id": "43",
+"prompt": "排障：上一位工程师写的 USART1 代码烧进去后串口无输出，请修复并保证上电输出 CEA:USART:PASS。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "DEBUGGING",
+"level": "capability",
+"inject": [
+{
+"file": "Core/Src/main.c",
+"find": "SystemClock_Config();",
+"replace": "SystemClock_Config();\n  /* BUG: USART was never initialized here */",
+"count": 1
+}
+]
+}

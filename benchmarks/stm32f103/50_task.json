@@ -1,0 +1,11 @@
+{
+"id": "50",
+"prompt": "双串口日志：USART1 打印调试信息，USART2 输出 ADC1 采样均值（1Hz）。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "LONG_HORIZON",
+"level": "capability",
+"inject": []
+}

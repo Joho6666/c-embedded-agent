@@ -1,0 +1,12 @@
+{
+"id": "45",
+"prompt": "按 Blue Pill 板卡定义配置 USART1 引脚（严格使用板卡 profile 的 TX/RX 引脚），115200。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/usart.c"
+],
+"must_compile": true,
+"domain": "CONTEXT",
+"level": "capability",
+"inject": []
+}

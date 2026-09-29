@@ -1,1 +1,11 @@
-{"id":"11","prompt":"I2C1 扫描 0x08-0x77 地址。","expected_files":["Core/Src/main.c"],"must_compile":true}
+{
+"id": "11",
+"prompt": "I2C1 扫描 0x08-0x77 地址。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "regression",
+"inject": []
+}

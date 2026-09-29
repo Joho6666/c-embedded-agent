@@ -49,14 +49,18 @@ export default function HistoryPage() {
       {rows && rows.length > 0 && (
         <div className="mt-4 divide-y divide-border rounded-sm border border-border bg-panel">
           {rows.map((t) => (
-            <div key={t.id} className="flex items-center justify-between px-3 py-3">
+            <a
+              key={t.id}
+              href={`/history/${t.id}`}
+              className="flex items-center justify-between px-3 py-3 hover:bg-accent"
+            >
               <div>
                 <div className="font-mono text-[12px]">{t.id}</div>
                 <div className="text-[13px]">{t.prompt || "(no prompt)"}</div>
                 <div className="text-[11px] text-muted-foreground">{t.project_id} · {t.started_at || ""}</div>
               </div>
               <StatusBadge status={t.status || "idle"} />
-            </div>
+            </a>
           ))}
         </div>
       )}

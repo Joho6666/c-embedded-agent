@@ -10,7 +10,7 @@ Project → Inspect → Understand MCU / IOC / Board → Modify → Build → Di
 
 Harnesses plan and edit code. CEA Core talks to ARM GCC, OpenOCD, serial, IOC, and boards. The Web UI remains the official workbench / demo — it is no longer where the engineering logic lives.
 
-Version: **0.9.0-alpha-mcp**. Production execution matrix is still **STM32F103 HAL only**. ESP32 / C51 / RP2040 / Host C are not supported.
+Version: **0.10.0-beta**. Production execution matrix is still **STM32F103 HAL only**. ESP32 / C51 / RP2040 / Host C are not supported.
 
 MyOS P0 (Today · Projects · Tasks · Assign Agent) sits on Workbench 2.0. It does **not** replace firmware execution. In the Web OS, C-Agent is the only runnable agent; Codex / Claude Code / Grok remain Planned inside MyOS. MCP is the path for those harnesses to call CEA Core.
 
@@ -21,12 +21,11 @@ The evaluation question is not “how many pages were added?”. It is:
 
 ## Support Matrix
 
-| Platform | Build | Agent | Flash | Hardware Validate |
-|---|---|---|---|---|
-| STM32F103 HAL | ✅ | Beta | Beta | Beta |
-| STM32F407 | ❌ | ❌ | ❌ | ❌ |
-| ESP32 | ❌ | ❌ | ❌ | ❌ |
-| 8051 | ❌ | ❌ | ❌ | ❌ |
+| Platform | Build | Agent | Flash | Simulation | Hardware Validate |
+|---|---|---|---|---|---|
+| STM32F103 HAL | ✅ | Beta | Beta | ✅ (Renode spike) | Beta |
+
+Evidence-derived per-host capability matrix: `GET /api/platforms` (VERIFIED requires committed evidence; code-path-exists is UNVERIFIED, never VERIFIED). Spikes: `docs/RENODE_SPIKE.md` (SUPPORTED — real run), `docs/ESP32_SIM_SPIKE.md` (NOT_RUN — ESP-IDF absent).
 
 Do not claim ESP32 / 8051 / F407 are available.
 
@@ -142,15 +141,26 @@ Per-project session: `hardware-session.json` (`debugger`, `serialDevice`, `baud`
 
 USART expect: `CEA:USART:PASS`. ADC expect: `CEA:ADC:value=` in 0–4095.
 
+### Hardware Lab (v0.10)
+
+- Device model + discovery: `GET/POST /api/hardware/devices`, `POST /api/hardware/discovery` — USB VID/PID + st-info probes; exact MCU stays UNKNOWN until SWD chip-id confirms the family.
+- Inventory: `workspaces/hardware-map.yaml`; fixture guide: `docs/hardware-lab/stm32f103-bluepill.md`.
+- HardwareRun records: `GET /api/projects/{id}/hardware-runs` — sha256(firmware/ELF), git commit, flash/serial logs, evidence; PASS requires real hardware evidence by construction.
+- Probe abstraction: OpenOCD SUPPORTED path + pyOCD/J-Link declared NOT_SUPPORTED until tested. GDB/MI DebuggerSession + CrashEvidence decoder; live diagnosis via `POST /api/hardware/debugger/diagnose`.
+- Safety: `DANGEROUS_HARDWARE` (mass erase / option bytes / bootloader) BLOCKED by default — single-use approval tokens; policy at `GET /api/approvals/policy`.
+- Simulation: `POST /api/simulation/run` (Renode); Build PASS ≠ Simulation PASS ≠ Hardware PASS — three levels always reported separately (`GET /api/platforms` matrix).
+
 ## Benchmark
 
 ```bash
 python benchmarks/benchmark.py
 ```
 
+50 tasks across domains (PERIPHERAL_CONFIG / COMPILE_REPAIR / SAFETY / DEBUGGING / LONG_HORIZON / CONTEXT), split into regression vs capability levels, with per-domain rates and Outcome Memory recording.
+
 Writes:
 
-- `benchmarks/stm32f103/results.json`
+- `benchmarks/stm32f103/results.json` (+ `domainRates`, `levelRates`)
 - `benchmarks/stm32f103/latest-summary.json` (commit this)
 - `benchmarks/comparison-summary.json` (Agent vs Baseline)
 
@@ -169,6 +179,6 @@ GitHub Actions: frontend `npm ci && npm run build`, backend `pytest`. ARM GCC is
 
 Leftover Universal AI Gateway Python sources live in `legacy/universal-ai-gateway/`. They are not imported by the live app.
 
-`unigateway/` is an independent mock console from an older graft. It is not imported by the Embedded Agent. Do not treat it as part of this product.
+The old `unigateway/` mock-console graft was removed in the v0.10 cleanup (zero runtime references; recoverable from git history).
 
 This release is STM32F103 only. Do not advertise ESP32 / C51 support.

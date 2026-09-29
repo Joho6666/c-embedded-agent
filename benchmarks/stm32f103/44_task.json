@@ -1,0 +1,19 @@
+{
+"id": "44",
+"prompt": "排障：LED 不闪烁。工程能编译但 PC13 无现象，请找出问题并修复。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/gpio.c"
+],
+"must_compile": true,
+"domain": "DEBUGGING",
+"level": "capability",
+"inject": [
+{
+"file": "Core/Src/main.c",
+"find": "HAL_Delay(500)",
+"replace": "HAL_Delay(500000)",
+"count": 1
+}
+]
+}

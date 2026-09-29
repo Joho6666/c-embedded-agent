@@ -1,0 +1,11 @@
+{
+"id": "36",
+"prompt": "USART1 接收命令 'LED ON'/'LED OFF' 控制 PC13，其他命令回显。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "LONG_HORIZON",
+"level": "capability",
+"inject": []
+}

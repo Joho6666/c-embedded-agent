@@ -1,0 +1,11 @@
+{
+"id": "33",
+"prompt": "TIM3 PWM 50Hz 驱动舵机，0.5ms~2.5ms 脉宽每秒步进。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

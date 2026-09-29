@@ -1,0 +1,11 @@
+{
+"id": "26",
+"prompt": "TIM3 输出两路 PWM：PA6 占空比 25%，PA7 占空比 75%，1kHz。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

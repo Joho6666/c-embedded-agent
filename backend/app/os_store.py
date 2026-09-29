@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from typing import Any
 
-from app.db import connect, now
+from app.config.settings import settings
+from app.db import connect, db_path, now
 from app.workspace.manager import list_projects as list_firmware_projects
 
 PROJECT_STATUSES = ("planned", "active", "paused", "completed", "archived")
@@ -12,6 +14,10 @@ TASK_STATUSES = ("todo", "in_progress", "agent_running", "review", "blocked", "d
 PRIORITIES = ("low", "medium", "high", "urgent")
 DOC_KINDS = ("prd", "design", "note", "agent_output")
 RUNNABLE_AGENT_ID = "c-agent"
+
+_seeded_for: str | None = None
+_synced_for: str | None = None
+_synced_at = 0.0
 
 SEED_AGENTS: list[dict[str, Any]] = [
     {
@@ -86,6 +92,11 @@ def _row(row: Any) -> dict[str, Any]:
 
 
 def seed_agents() -> None:
+    """Idempotent upsert; runs once per database (called on hot request paths)."""
+    global _seeded_for
+    key = str(db_path())
+    if _seeded_for == key:
+        return
     with connect() as con:
         for agent in SEED_AGENTS:
             con.execute(
@@ -111,14 +122,22 @@ def seed_agents() -> None:
                     json.dumps(agent["config"]),
                 ),
             )
+    _seeded_for = key
 
 
 def sync_firmware_projects() -> None:
+    """Mirror firmware projects into os_projects; throttled per database + TTL."""
+    global _synced_at, _synced_for
+    key = str(db_path())
+    if _synced_for == key and time.monotonic() - _synced_at < settings.os_sync_ttl_sec:
+        return
     stamp = now()
     try:
         items = list_firmware_projects()
     except OSError:
         return
+    _synced_at = time.monotonic()
+    _synced_for = key
     with connect() as con:
         for meta in items:
             fid = str(meta.get("id") or "")

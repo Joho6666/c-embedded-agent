@@ -1,0 +1,7 @@
+using sysbus
+mach create "cea-spike"
+machine LoadPlatformDescription @platforms/cpus/stm32f103.repl
+cpu PerformanceInMips 8
+sysbus.usart1 CreateFileBackend @C:/Users/JOHO/.zcode/workspace/default/backend/tests/fixtures/renode_spike/uart.log
+sysbus LoadELF @C:/Users/JOHO/.zcode/workspace/default/backend/tests/fixtures/renode_spike/sim_uart.elf
+start

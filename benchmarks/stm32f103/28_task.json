@@ -1,0 +1,11 @@
+{
+"id": "28",
+"prompt": "I2C1 读写 24C02 EEPROM：写入 0xAB 到地址 0x00 再读回验证。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

@@ -33,6 +33,7 @@ def connect(device: str, baud: int = 115200) -> dict[str, Any]:
     _session["device"] = device
     _session["baud"] = baud
     _session["lines"].clear()
+    _session["started"] = time.monotonic()
     return {"ok": True, "device": device, "baud": baud}
 
 
@@ -68,10 +69,25 @@ def read_available() -> list[dict[str, str]]:
         raw = b""
     if raw:
         text = raw.decode("utf-8", errors="replace")
+        now = time.monotonic()
         for line in text.splitlines():
             if line:
-                _session["lines"].append({"text": line})
+                _session["lines"].append({"text": line, "t": now})
     return list(_session["lines"])
+
+
+def timed_lines() -> list[tuple[str, float]]:
+    """(text, seconds since connect) per captured line — real monotonic offsets."""
+    t0 = _session.get("started")
+    out: list[tuple[str, float]] = []
+    for r in _session["lines"]:
+        text = r.get("text") or ""
+        if not text:
+            continue
+        t = r.get("t")
+        elapsed = max(0.0, float(t) - float(t0)) if t is not None and t0 is not None else 0.0
+        out.append((text, elapsed))
+    return out
 
 
 def wait_for(expect: str | None = None, max_s: float = 8.0, quiet: float = 0.3) -> list[str]:

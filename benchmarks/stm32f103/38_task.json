@@ -1,0 +1,19 @@
+{
+"id": "38",
+"prompt": "USART1 115200 发送 hello。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/usart.c"
+],
+"must_compile": true,
+"domain": "COMPILE_REPAIR",
+"level": "capability",
+"inject": [
+{
+"file": "Core/Src/main.c",
+"find": "SystemClock_Config();",
+"replace": "SystemClock_ConfigX();",
+"count": 1
+}
+]
+}

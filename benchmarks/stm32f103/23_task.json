@@ -1,0 +1,11 @@
+{
+"id": "23",
+"prompt": "使用 SysTick 实现 1ms 时基，LED 每 500ms 翻转。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

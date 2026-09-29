@@ -4,6 +4,10 @@
       "command": "python",
       "args": ["scripts/cea_mcp.py"],
       "env": {}
+    },
+    "wechat-devtools": {
+      "command": "cmd",
+      "args": ["/c", "D:\\微信web开发者工具\\wechatide.cmd", "mcp"]
     }
   }
 }

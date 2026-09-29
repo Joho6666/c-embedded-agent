@@ -1,0 +1,12 @@
+{
+"id": "21",
+"prompt": "配置 USART2 115200，每 500ms 发送一行 hello。",
+"expected_files": [
+"Core/Src/main.c",
+"Core/Src/usart.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

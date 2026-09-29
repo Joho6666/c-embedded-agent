@@ -84,6 +84,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _fmt_elapsed(seconds: float) -> str:
+    s = max(0.0, float(seconds))
+    minutes, sec = divmod(s, 60)
+    return f"[{int(minutes):02d}:{sec:05.2f}]"
+
+
 class AgentRun:
     def __init__(self, run_id: str, project_id: str, prompt: str, mode: str) -> None:
         self.id = run_id
@@ -151,6 +157,20 @@ class AgentRun:
 
 
 RUNS: dict[str, AgentRun] = {}
+MAX_TRACKED_RUNS = 200
+
+
+def _evict_finished_runs() -> None:
+    """Cap in-memory run registry; never evict a run that is still alive."""
+    if len(RUNS) <= MAX_TRACKED_RUNS:
+        return
+    for rid, r in list(RUNS.items()):
+        if len(RUNS) <= MAX_TRACKED_RUNS:
+            break
+        if rid != r.id:
+            continue
+        if r.status in {"success", "failed", "cancelled"}:
+            RUNS.pop(rid, None)
 
 
 def _sync_os_task(run: AgentRun) -> None:
@@ -311,7 +331,7 @@ async def _await_approval(run: AgentRun, approval_id: str) -> str:
     run.approval_event.clear()
     run.approval_decision = "pending"
     try:
-        await asyncio.wait_for(run.approval_event.wait(), timeout=3600)
+        await asyncio.wait_for(run.approval_event.wait(), timeout=settings.approval_timeout_sec)
     except TimeoutError:
         run.pending_approval_id = None
         return "rejected"
@@ -392,7 +412,6 @@ async def _apply_known_fixes(run: AgentRun, root: Path, compiled: dict[str, Any]
     """Deterministic Error Memory: known signature → fix → rebuild. Unknown errors stay for the LLM."""
     text = str(compiled.get("combined") or "")
     hits = match_known_errors(text)
-    applied = False
     for hit in hits:
         if not hit.get("mechanical"):
             continue
@@ -404,12 +423,11 @@ async def _apply_known_fixes(run: AgentRun, root: Path, compiled: dict[str, Any]
             description=json.dumps(fix, ensure_ascii=False)[:800],
         )
         if fix.get("applied"):
-            applied = True
             compiled = await _compile(run, root)
             mark_fix_result(hit["id"], success=bool(compiled.get("success")))
             if compiled.get("success"):
                 return compiled
-    return compiled if applied else compiled
+    return compiled
 
 
 async def _compile(run: AgentRun, root: Path) -> dict[str, Any]:
@@ -510,8 +528,10 @@ def _emit_pipeline(run: AgentRun, pipeline: dict[str, Any]) -> None:
         ev_type = {"flash": "flash", "serial": "serial", "validate": "validation", "build": "compile"}.get(kind, "tool_call")
         logs = step.get("logs") or ""
         if ev_type == "serial" and logs:
+            elapsed = step.get("elapsed") or []
             for i, line in enumerate(logs.splitlines()[:40]):
-                run.emit(type="serial", status=step.get("status") or "running", title="Serial", output=f"[00:00.{i}] {line}")
+                stamp = _fmt_elapsed(elapsed[i]) if i < len(elapsed) else _fmt_elapsed(0.0)
+                run.emit(type="serial", status=step.get("status") or "running", title="Serial", output=f"{stamp} {line}")
         else:
             run.emit(
                 type=ev_type,
@@ -542,19 +562,21 @@ def _emit_pipeline(run: AgentRun, pipeline: dict[str, Any]) -> None:
 
 async def _maybe_run_on_device(run: AgentRun, root: Path) -> None:
     device = run.serial_device
-    pipeline = run_pipeline(root, serial_device=device, baud=run.serial_baud, expect=run.expect)
+    pipeline = await asyncio.to_thread(
+        run_pipeline, root, serial_device=device, baud=run.serial_baud, expect=run.expect
+    )
     _emit_pipeline(run, pipeline)
 
 
 async def _flash_tool(run: AgentRun, root: Path) -> str:
     try:
-        data = flash_elf(root)
+        data = await asyncio.to_thread(flash_elf, root)
     except FlashError as e:
         run.emit(type="flash", status="failed", title="Flash", description=str(e))
         return json.dumps({"success": False, "error": str(e)})
     ok = bool(data.get("success"))
     run.emit(type="flash", status="success" if ok else "failed", title="Flash", output=str(data.get("output") or "")[-2000:])
-    return json.dumps(data, ensure_ascii=False)[:8000]
+    return json.dumps(data, ensure_ascii=False)[: settings.tool_result_max_chars]
 
 
 async def _serial_tool(run: AgentRun, args: dict[str, Any]) -> str:
@@ -564,16 +586,24 @@ async def _serial_tool(run: AgentRun, args: dict[str, Any]) -> str:
         run.emit(type="serial", status="failed", title="Serial", description="no serial device")
         return json.dumps({"available": False, "reason": "no serial device"})
     try:
-        sample = sample_serial(device, baud, expect=str(args.get("expect") or run.expect or "") or None)
+        sample = await asyncio.to_thread(
+            sample_serial,
+            device,
+            baud,
+            seconds=settings.serial_wait_sec,
+            expect=str(args.get("expect") or run.expect or "") or None,
+        )
     except (ValueError, RuntimeError, OSError) as e:
         run.emit(type="serial", status="failed", title="Serial", description=str(e))
         return json.dumps({"success": False, "error": str(e)})
     lines = sample.get("lines") or []
+    elapsed = sample.get("elapsed") or []
     for i, line in enumerate(lines[:40]):
-        run.emit(type="serial", status="success", title="Serial", output=f"[00:00.{i}] {line}")
+        stamp = _fmt_elapsed(elapsed[i]) if i < len(elapsed) else _fmt_elapsed(0.0)
+        run.emit(type="serial", status="success", title="Serial", output=f"{stamp} {line}")
     if not lines:
         run.emit(type="serial", status="failed", title="Serial", description="no serial output")
-    return json.dumps(sample, ensure_ascii=False)[:8000]
+    return json.dumps(sample, ensure_ascii=False)[: settings.tool_result_max_chars]
 
 
 async def run_agent(run: AgentRun) -> None:
@@ -658,8 +688,23 @@ async def run_agent(run: AgentRun) -> None:
         _sync_os_task(run)
         raise
     finally:
+        _evict_finished_runs()
         if not run.cancel_event.is_set():
             run.queue.put_nowait(None)
+
+
+def _age_tool_results(messages: list[dict[str, Any]]) -> None:
+    """Keep recent tool results verbatim; trim older ones to cut input token growth on long runs."""
+    seen = 0
+    for m in reversed(messages):
+        if m.get("role") != "tool":
+            continue
+        seen += 1
+        if seen <= settings.tool_history_keep:
+            continue
+        content = str(m.get("content") or "")
+        if len(content) > settings.old_tool_result_chars:
+            m["content"] = content[: settings.old_tool_result_chars] + "…(历史结果已截断)"
 
 
 async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
@@ -681,6 +726,7 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
     if looks_complex(run.prompt):
         run.emit(type="reasoning", status="success", title="复杂任务，已生成 Plan")
 
+    context_msg_index: int | None = None
     for i in range(settings.max_agent_iterations):
         if run.cancelled():
             raise asyncio.CancelledError()
@@ -694,7 +740,13 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
             prompt=run.prompt,
             extra_skills=run.loaded_skills,
         )
-        messages.append({"role": "system", "content": "当前上下文：\n" + context_prompt(ctx)})
+        ctx_msg = {"role": "system", "content": "当前上下文：\n" + context_prompt(ctx)}
+        if context_msg_index is not None:
+            messages[context_msg_index] = ctx_msg
+        else:
+            messages.append(ctx_msg)
+            context_msg_index = len(messages) - 1
+        _age_tool_results(messages)
         run.emit(type="reasoning", status="running", title=f"第 {i + 1} 轮推理")
         t0 = time.perf_counter()
         data = await chat(messages, TOOLS)
@@ -754,9 +806,11 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
                     run.serial_baud = int(args.get("baud"))
                 if args.get("expect"):
                     run.expect = str(args.get("expect"))
-                pipeline = run_pipeline(root, serial_device=run.serial_device, baud=run.serial_baud, expect=run.expect)
+                pipeline = await asyncio.to_thread(
+                    run_pipeline, root, serial_device=run.serial_device, baud=run.serial_baud, expect=run.expect
+                )
                 _emit_pipeline(run, pipeline)
-                result = json.dumps(pipeline, ensure_ascii=False)[:8000]
+                result = json.dumps(pipeline, ensure_ascii=False)[: settings.tool_result_max_chars]
             elif fn == "apply_error_memory_fix":
                 result = _exec_sync(fn, args, root, run)
                 compiled = await _compile(run, root)
@@ -768,6 +822,6 @@ async def _llm_loop(run: AgentRun, root: Path, board: dict[str, Any]) -> None:
                 result = _exec_sync(fn, args, root, run)
                 if fn == "retrieve_knowledge":
                     run.emit(type="knowledge_result", status="success", title="知识检索", description=result[:800])
-            messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": str(result)[:8000]})
+            messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": str(result)[: settings.tool_result_max_chars]})
     run.emit(type="error", status="failed", title="达到最大迭代次数")
     run.status = "failed"

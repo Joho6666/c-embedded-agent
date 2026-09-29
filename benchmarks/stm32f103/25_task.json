@@ -1,0 +1,11 @@
+{
+"id": "25",
+"prompt": "TIM2 更新中断 1Hz，中断里翻转 PC13。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "PERIPHERAL_CONFIG",
+"level": "capability",
+"inject": []
+}

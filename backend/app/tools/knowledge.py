@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
 from app.config.settings import settings
-from app.db import connect
+from app.db import connect, db_path
 
 FRONT_MATTER_KEYS = ("source", "page", "section", "mcu", "type", "title")
+
+_ingest_lock = threading.Lock()
+_ingested_fingerprint: str | None = None
 
 
 def _parse_note(path: Path) -> dict[str, str]:
@@ -95,11 +99,46 @@ def _fts_query(query: str) -> str:
     return " ".join(tokens)[:200]
 
 
+def _knowledge_fingerprint() -> str:
+    """Cheap dir stat fingerprint; a change means the FTS table needs a rebuild.
+
+    Includes the database path so a fresh workspace always re-ingests.
+    """
+    root = settings.knowledge_root
+    if not root.is_absolute():
+        root = Path.cwd() / root
+    parts = [f"db={db_path()}"]
+    if not root.is_dir():
+        return "|".join(parts)
+    for p in sorted(root.rglob("*")):
+        if p.suffix.lower() not in {".md", ".txt"} or not p.is_file():
+            continue
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        parts.append(f"{p.relative_to(root)}:{st.st_mtime_ns}:{st.st_size}")
+    return "|".join(parts)
+
+
+def _ensure_ingested() -> None:
+    global _ingested_fingerprint
+    fp = _knowledge_fingerprint()
+    if _ingested_fingerprint == fp:
+        return
+    with _ingest_lock:
+        fp = _knowledge_fingerprint()
+        if _ingested_fingerprint == fp:
+            return
+        ingest_markdown()
+        _ingested_fingerprint = fp
+
+
 def retrieve_knowledge(query: str, k: int = 4) -> list[dict[str, str]]:
     q = (query or "").strip()
     if not q:
         return []
-    ingest_markdown()
+    _ensure_ingested()
     fts = _fts_query(q) or q
     try:
         with connect() as con:

@@ -1,0 +1,11 @@
+{
+"id": "48",
+"prompt": "USART1 DMA 接收不定长数据，每秒通过 DMA 通道输出接收字节数统计。",
+"expected_files": [
+"Core/Src/main.c"
+],
+"must_compile": true,
+"domain": "LONG_HORIZON",
+"level": "capability",
+"inject": []
+}

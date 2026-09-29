@@ -40,6 +40,43 @@ def led_from_ioc(ioc: dict[str, Any] | None) -> str:
     return "PC13"
 
 
+def attach_manifest(ctx: dict[str, Any]) -> dict[str, Any]:
+    """ContextManifest: every context entry records source, reason, priority,
+    token estimate and content hash — context is auditable, not a dump."""
+    import hashlib
+
+    manifest: list[dict[str, Any]] = []
+    reasons = {
+        "mcu": ("mcu/stm32f103.py", "target identity", 1),
+        "board": ("IOC > project.json > board profile", "board identity", 1),
+        "led": ("IOC/board profile", "board-specific pin — never let the model guess", 1),
+        "project_tree": ("workspace file listing", "ground the model in the real tree", 2),
+        "relevant_files": ("Core/** filter", "editable surface", 2),
+        "errors": ("gcc/ld diagnostics", "repair input", 1),
+        "knowledge": ("knowledge FTS retrieval", "datasheet/SDK facts with citation", 2),
+        "ioc": (".ioc parse", "clock/pins/conflicts ground truth", 1),
+        "skills": ("skill registry match", "peripheral procedures + validators", 2),
+        "project": ("project.json", "project identity", 3),
+    }
+    for key, (source, reason, priority) in reasons.items():
+        if key not in ctx or ctx[key] is None:
+            continue
+        blob = json.dumps(ctx[key], ensure_ascii=False, default=str)
+        manifest.append(
+            {
+                "source": source,
+                "key": key,
+                "reason": reason,
+                "priority": priority,
+                "tokens": max(1, len(blob) // 4),
+                "hash": hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12],
+            }
+        )
+    ctx["manifest"] = manifest
+    ctx["manifestTokens"] = sum(m["tokens"] for m in manifest)
+    return ctx
+
+
 def build_context(
     root: Path,
     *,
@@ -76,7 +113,7 @@ def build_context(
     clock = (ioc or {}).get("clock") or {}
     pins = (ioc or {}).get("pins") or []
     pin_brief = [f"{p.get('pin')}={p.get('signal')}" for p in pins[:16]]
-    return {
+    result = {
         "mcu": mcu,
         "core": MCU["core"],
         "flash_kb": MCU["flash_kb"],
@@ -110,6 +147,7 @@ def build_context(
         else None,
         "priority": "IOC > Project Config > Board Profile > Default",
     }
+    return attach_manifest(result)
 
 
 def context_prompt(ctx: dict[str, Any]) -> str:

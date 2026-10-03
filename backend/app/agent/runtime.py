@@ -47,6 +47,7 @@ SYSTEM = """你是一名资深嵌入式 C 工程师，目标是让当前已注�
 8. 根据真实 GCC/LD Error 修复。
 9. Build 成功以后可以参考静态分析，但不能把分析失败当成编译失败。
 10. 不允许声称成功，除非平台构建器返回 PASS 且有真实产物证据。
+11. 任务有可观察行为（LED 闪烁周期、串口输出）时，编译成功后调用 simulate_firmware 在仿真器里验证；仿真 FAIL 就按失败信息修改代码、重新编译、再仿真。
 禁止凭空编造寄存器、SDK API、GPIO、头文件，禁止擅自修改 MCU 型号。无设备证据时设备工具只能报 UNAVAILABLE。
 """
 
@@ -105,6 +106,7 @@ class AgentRun:
         self.phase = "init"
         self.messages: list[dict[str, Any]] = []
         self.action_plan: dict[str, Any] | None = None
+        self.last_simulation: dict[str, Any] | None = None
 
         # Phase-aware resume & idempotency tracking
         self.step_id: str = ""
@@ -599,6 +601,21 @@ def _wants_device(prompt: str) -> bool:
     return any(k in p for k in ("usart", "uart", "串口", "hello", "flash", "真机", "500ms", "run on device"))
 
 
+_OBSERVABLE_BEHAVIOUR = ("led", "闪烁", "翻转", "toggle", "blink", "usart", "uart", "串口", "hello", "printf", "打印")
+
+
+def _wants_simulation(prompt: str, adapter: PlatformAdapter) -> bool:
+    """Observable behaviour the adapter can check in a simulator: keep the loop open after a build."""
+    supported = type(adapter).simulate is not PlatformAdapter.simulate
+    return supported and any(k in prompt.lower() for k in _OBSERVABLE_BEHAVIOUR)
+
+
+def _simulation_ok(run: AgentRun) -> bool:
+    """A failed simulation fails the run; an unavailable simulator does not (no evidence either way)."""
+    sim = run.last_simulation
+    return sim is None or bool(sim.get("success")) or sim.get("status") == "UNAVAILABLE"
+
+
 def _emit_pipeline(run: AgentRun, pipeline: dict[str, Any]) -> None:
     for step in pipeline.get("steps") or []:
         kind = step.get("kind") or "tool_call"
@@ -640,6 +657,28 @@ async def _maybe_run_on_device(run: AgentRun, root: Path, adapter: PlatformAdapt
         root, serial_device=run.serial_device, baud=run.serial_baud, expect=run.expect, task=run.prompt
     ).to_dict()
     _emit_pipeline(run, pipeline)
+
+
+async def _simulate_tool(run: AgentRun, root: Path, adapter: PlatformAdapter, args: dict[str, Any]) -> str:
+    run.emit(type="tool_call", status="running", title="仿真运行固件", tool={"name": "simulate_firmware", "arguments": args})
+    data = (await asyncio.to_thread(adapter.simulate, root, args)).to_dict()
+    run.last_simulation = data
+    run.emit(
+        type="validation",
+        status="success" if data.get("success") else "failed",
+        title=f"仿真验证 · {data.get('status')}",
+        description=json.dumps(
+            {
+                "method": "simulation",
+                "status": str(data.get("status", "")).lower(),
+                "expected": "; ".join(c.get("name", "") for c in data.get("checks") or []),
+                "observed": data.get("reason") or "all behavioural checks passed",
+                "checks": data.get("checks") or [],
+            },
+            ensure_ascii=False,
+        ),
+    )
+    return json.dumps(data, ensure_ascii=False)[:8000]
 
 
 async def _flash_tool(run: AgentRun, root: Path, adapter: PlatformAdapter) -> str:
@@ -816,7 +855,8 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
             {
                 "role": "user",
                 "content": f"{context_prompt(ctx)}\n任务：{run.prompt}\n工程已存在。先读文件，再最小修改并编译直到 exit code == 0。"
-                f"{' 编译成功后可用 run_on_device / flash_firmware / serial_read。无调试器时不要声称烧录成功。' if _wants_device(run.prompt) else ''}",
+                f"{' 编译成功后可用 run_on_device / flash_firmware / serial_read。无调试器时不要声称烧录成功。' if _wants_device(run.prompt) else ''}"
+                f"{' 编译成功后必须调用 simulate_firmware，按任务要求断言 LED 周期或串口输出。' if _wants_simulation(run.prompt, adapter) else ''}",
             },
         ]
         start_iteration = 0
@@ -871,7 +911,7 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
                 run.save_checkpoint()
                 return
             result = await _compile(run, root, adapter)
-            run.status = "success" if result.get("success") else "failed"
+            run.status = "success" if result.get("success") and _simulation_ok(run) else "failed"
             run.phase = "done"
             run.save_checkpoint()
             return
@@ -929,9 +969,15 @@ async def _llm_loop(run: AgentRun, root: Path, adapter: PlatformAdapter, workflo
             elif fn == "compile_project":
                 compiled = await _compile(run, root, adapter)
                 result = json.dumps(compiled, ensure_ascii=False)
-                if compiled.get("success") and not _wants_device(run.prompt):
+                if (
+                    compiled.get("success")
+                    and not _wants_device(run.prompt)
+                    and not _wants_simulation(run.prompt, adapter)
+                ):
                     run.status = "success"
                     return
+            elif fn == "simulate_firmware":
+                result = await _simulate_tool(run, root, adapter, args)
             elif fn == "flash_firmware":
                 result = await _flash_tool(run, root, adapter)
             elif fn == "serial_read":

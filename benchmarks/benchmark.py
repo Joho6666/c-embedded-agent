@@ -313,7 +313,8 @@ def main() -> int:
 
     if args.smoke:
         smoke_ids = {"1", "4", "8", "20", "39"}
-        curated = [t for t in all_tasks if str(t.get("id")) in smoke_ids]
+        # Task ids are zero-padded ("01"); compare numerically.
+        curated = [t for t in all_tasks if str(t.get("id")).lstrip("0") in smoke_ids]
         tasks = curated if len(curated) >= 3 else all_tasks[:5]
     elif limit_raw:
         tasks = all_tasks[: int(limit_raw)]

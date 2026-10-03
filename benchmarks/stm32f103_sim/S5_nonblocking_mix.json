@@ -1,0 +1,43 @@
+{
+  "id": "S5",
+  "prompt": "不要使用 HAL_Delay：用 HAL_GetTick 非阻塞地让 PC13 LED 每 250ms 翻转一次，同时 USART1 115200 每 1000ms 打印一行 CEA:ALIVE。",
+  "category": "mixed",
+  "platform": "stm32f103-hal",
+  "fixture": "stm32f103_hal_official",
+  "requirements": {
+    "toolchain": "arm-none-eabi-gcc-13.3.1",
+    "hardware": false,
+    "simulator": "renode-1.15"
+  },
+  "environment": {
+    "framework": "HAL",
+    "sdk": "STM32CubeF1-1.1.9",
+    "board": "Blue Pill"
+  },
+  "evidence": [
+    "build",
+    "static-validation",
+    "simulation"
+  ],
+  "oracle": {
+    "must_compile": true,
+    "expected_files": [
+      "Core/Src/main.c"
+    ],
+    "behavior": {
+      "led": [
+        {
+          "pin": "PC13",
+          "on_ms": 250,
+          "off_ms": 250
+        }
+      ],
+      "uart": [
+        {
+          "peripheral": "usart1",
+          "expect": "CEA:ALIVE"
+        }
+      ]
+    }
+  }
+}

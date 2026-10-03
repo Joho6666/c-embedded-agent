@@ -294,6 +294,20 @@ class Stm32F103Adapter(PlatformAdapter):
         result = validate_project(Path(root), task)
         return PlatformResult("PASS" if result.get("passed") else "FAIL", "validate", self.adapter_id, result, evidence=list(result.get("kinds") or select_validators(task)))
 
+    def simulate(self, root: Path, spec: Mapping[str, Any]) -> PlatformResult:
+        from app.sim.renode import checks_from_spec, simulate as renode_simulate
+
+        elf = next((p for p in (Path(root) / "firmware.elf", Path(root) / "build" / "firmware.elf") if p.is_file()), None)
+        if elf is None:
+            return PlatformResult("FAIL", "simulate", self.adapter_id, reason="firmware.elf not found; build first")
+        try:
+            checks = checks_from_spec(dict(spec))
+        except (TypeError, ValueError, IndexError) as exc:
+            return PlatformResult("FAIL", "simulate", self.adapter_id, reason=f"invalid simulation spec: {exc}")
+        sim = renode_simulate(elf, checks)
+        data = {"checks": sim.checks, "kind": sim.kind, "simulator": sim.simulator, "artifacts": sim.evidence}
+        return PlatformResult(sim.status, "simulate", self.adapter_id, data, reason=sim.reason, evidence=[sim.kind])
+
     def validate_hardware(self, *, serial_lines: list[str] | None, expect: str | None, task: str, has_probe: bool) -> PlatformResult:
         result = hardware_status(serial_lines=serial_lines, expect=expect, task=task, has_probe=has_probe)
         status = str(result.get("status") or "UNAVAILABLE").upper()

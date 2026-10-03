@@ -215,6 +215,10 @@ class PlatformAdapter(ABC):
     def validate_static(self, root: Path, task: str = "") -> PlatformResult:
         return PlatformResult.unavailable("validate", self.adapter_id, "static validation is unavailable")
 
+    def simulate(self, root: Path, spec: Mapping[str, Any]) -> PlatformResult:
+        """Run the built firmware in a simulator and assert behaviour (``SIMULATED`` evidence)."""
+        return PlatformResult.unavailable("simulate", self.adapter_id, "simulation is unavailable for this platform")
+
     def validate_hardware(
         self,
         *,

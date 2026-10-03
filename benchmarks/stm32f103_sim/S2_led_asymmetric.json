@@ -1,0 +1,37 @@
+{
+  "id": "S2",
+  "prompt": "Blue Pill 板载 LED（PC13）亮 200ms、灭 800ms，循环。",
+  "category": "gpio",
+  "platform": "stm32f103-hal",
+  "fixture": "stm32f103_hal_official",
+  "requirements": {
+    "toolchain": "arm-none-eabi-gcc-13.3.1",
+    "hardware": false,
+    "simulator": "renode-1.15"
+  },
+  "environment": {
+    "framework": "HAL",
+    "sdk": "STM32CubeF1-1.1.9",
+    "board": "Blue Pill"
+  },
+  "evidence": [
+    "build",
+    "static-validation",
+    "simulation"
+  ],
+  "oracle": {
+    "must_compile": true,
+    "expected_files": [
+      "Core/Src/main.c"
+    ],
+    "behavior": {
+      "led": [
+        {
+          "pin": "PC13",
+          "on_ms": 200,
+          "off_ms": 800
+        }
+      ]
+    }
+  }
+}
